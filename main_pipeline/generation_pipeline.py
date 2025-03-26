@@ -5,6 +5,7 @@ import base64
 import openai
 import cv2
 import torch
+import numpy as np
 from PIL import Image
 from dotenv import load_dotenv
 from diffusers import StableDiffusionPipeline
@@ -20,7 +21,7 @@ MODEL_ID = "stabilityai/stable-diffusion-2-1"
 pipeline = StableDiffusionPipeline.from_pretrained(
     MODEL_ID,
     torch_dtype=torch.float16,
-    revision="fp16"
+    variant="fp16"
 )
 device = "mps" if torch.backends.mps.is_available() else "cpu"
 pipeline.to(device)
@@ -39,26 +40,7 @@ COMPOSITION_MAPPING = {
     "Unknown": "Abstract Freeform"
 }
 
-# Preprocess handwriting image
-def preprocess_handwriting(image_path):
-    image = cv2.imread(image_path, cv2.IMREAD_COLOR)
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    processed = cv2.adaptiveThreshold(
-        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
-    )
-    processed_path = "processed_handwriting.jpg"
-    cv2.imwrite(processed_path, processed)
-    return processed_path
-
-# Convert image to Base64
-def image_to_base64(image_path):
-    with open(image_path, "rb") as img_file:
-        return base64.b64encode(img_file.read()).decode("utf-8")
-
-# Extract handwriting image
-def extract_text_from_handwriting(image_path):
-    base64_image = image_to_base64(image_path)
+def extract_text_from_base64(base64_image):
     try:
         response = client.chat.completions.create(
             model="gpt-4o",
@@ -69,7 +51,6 @@ def extract_text_from_handwriting(image_path):
                         {"type": "text", "text":
                             "Extract the handwritten text from this image and detect its language."
                             "Return the result in JSON format: {\"text\": \"extracted text\", \"language\": \"detected language\"}."
-                            "Do not add extra explanations, just return valid JSON."
                         },
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
@@ -179,11 +160,54 @@ def generate_image_from_prompt(prompt):
     return image
 
 def process_text_input(input_image):
-    temp_path = "user_input.jpg"
-    input_image.save(temp_path)
-    processed_path = preprocess_handwriting(temp_path)
+    print("📥 Incoming Gradio sketch_image:", type(input_image))
 
-    extracted_text, detected_language = extract_text_from_handwriting(processed_path)
+    if isinstance(input_image, dict):
+        print("📦 Dict keys:", input_image.keys())
+
+        img = input_image.get("composite")
+        print("🧪 Type of input_image['composite']:", type(img))
+
+        # ✅ Fix: Convert NumPy array to PIL Image
+        if isinstance(img, np.ndarray):
+            img = Image.fromarray(img.astype("uint8"))  # Gradio returns float sometimes
+            print("🖼️ Converted numpy.ndarray to PIL.Image")
+            input_image = img
+        elif isinstance(img, Image.Image):
+            print("✅ Composite is already a valid PIL image.")
+            input_image = img
+        else:
+            print("❌ 'composite' is not usable. Here's what it is:", img)
+            raise ValueError("Dict input did not contain a valid image under 'composite'.")
+
+    if not isinstance(input_image, Image.Image):
+        raise ValueError(f"Invalid input: not a PIL image. Got {type(input_image)}")
+
+    # Force conversion to RGB if needed
+    if input_image.mode != "RGB":
+        print(f"🎨 Converting image from {input_image.mode} to RGB")
+        input_image = input_image.convert("RGB")
+
+    # Convert to NumPy array and process
+    input_array = np.array(input_image)
+    print("📐 Image shape:", input_array.shape)
+    print("🔍 NumPy dtype:", input_array.dtype)
+
+    input_np = cv2.cvtColor(input_array, cv2.COLOR_RGB2BGR)
+    gray = cv2.cvtColor(input_np, cv2.COLOR_BGR2GRAY)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    processed = cv2.adaptiveThreshold(
+        blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 11, 2
+    )
+
+    # Encode processed image to base64
+    success, buffer = cv2.imencode('.jpg', processed)
+    if not success:
+        raise ValueError("Failed to encode image to JPEG.")
+    base64_image = base64.b64encode(buffer).decode("utf-8")
+
+    # Process text with GPT
+    extracted_text, detected_language = extract_text_from_base64(base64_image)
     translated_text = translate_to_english(extracted_text)
     emotion_info = analyze_emotion(translated_text)
     composition_style = assign_composition_style(emotion_info["emotion"])

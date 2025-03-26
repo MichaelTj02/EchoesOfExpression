@@ -32,19 +32,23 @@ drawing_thread.start()
 
 # --- Gradio input handler ---
 def handle_user_input(sketch_image):
-    print("Processing handwriting image...")
-    result = process_text_input(sketch_image)
-    image = result["generated_image"]
-    add_agent_for_image(image, canvas, agents)
-    return "Visual generation started. Check the canvas window."
+    print("📥 Incoming Gradio sketch_image:", type(sketch_image))
+    if isinstance(sketch_image, dict):
+        print("📦 Dict keys:", sketch_image.keys())
+    return process_text_input(sketch_image)
 
-# --- Gradio Interface ---
 interface = gr.Interface(
     fn=handle_user_input,
     inputs=gr.Sketchpad(),
     outputs="text",
-    title="Handwriting to Cultural Visual Generator",
-    description="Write a sentence using an iPad stylus. The system will analyze the content and draw an AI-generated cultural visual."
+    title="Cultural AI Sketch Interface"
 )
+
+if __name__ == "__main__":
+    import threading
+    from canvas_utils import run_live_drawing_loop
+
+    threading.Thread(target=interface.launch, kwargs={"share": True}).start()
+    run_live_drawing_loop()
 
 interface.launch(share=True)
