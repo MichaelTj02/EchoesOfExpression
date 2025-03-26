@@ -19,8 +19,8 @@ from canvas_utils import run_live_drawing_loop, add_agent_for_image, init_canvas
 from generation_pipeline import process_text_input
 
 # --- Initialize the canvas (global) ---
-CANVAS_WIDTH = 1024
-CANVAS_HEIGHT = 768
+CANVAS_WIDTH = 2560
+CANVAS_HEIGHT = 1440
 canvas = init_canvas(CANVAS_WIDTH, CANVAS_HEIGHT)
 
 # --- Background drawing loop thread ---
@@ -31,26 +31,20 @@ drawing_thread = threading.Thread(target=start_drawing, daemon=True)
 drawing_thread.start()
 
 # --- Gradio input handler ---
-def handle_user_text(text):
-    print("🖋 Received text input, processing...")
-
-    # Step 1: Process text to extract language + composition info
-    extracted_data = process_text_input(text)
-
-    # Step 2: Generate image & assign to an agent
-    image = extracted_data["generated_image"]
+def handle_user_input(sketch_image):
+    print("Processing handwriting image...")
+    result = process_text_input(sketch_image)
+    image = result["generated_image"]
     add_agent_for_image(image, canvas, agents)
+    return "Visual generation started. Check the canvas window."
 
-    return "✅ Visual generation started. Watch the live canvas!"
-
-# --- Gradio Interface (iPad stylus-compatible text input) ---
+# --- Gradio Interface ---
 interface = gr.Interface(
-    fn=handle_user_text,
+    fn=handle_user_input,
     inputs=gr.Sketchpad(),
     outputs="text",
-    title="🖋️ Write a Sentence to Visualize",
-    description="Write a sentence using an iPad stylus. The system will interpret it and draw visuals based on cultural context.",
-    live=True
+    title="Handwriting to Cultural Visual Generator",
+    description="Write a sentence using an iPad stylus. The system will analyze the content and draw an AI-generated cultural visual."
 )
 
 interface.launch(share=True)

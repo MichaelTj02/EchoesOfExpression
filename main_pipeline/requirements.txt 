@@ -1,0 +1,18 @@
+# Core libraries
+torch
+diffusers
+transformers
+accelerate
+Pillow
+opencv-python
+numpy
+
+# OpenAI API
+openai
+python-dotenv
+
+# Gradio interface
+gradio
+
+# Others
+tqdm
