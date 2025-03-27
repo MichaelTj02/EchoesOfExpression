@@ -481,7 +481,7 @@ MODEL_ID = "stabilityai/stable-diffusion-2-1"
 pipeline = StableDiffusionPipeline.from_pretrained(
     MODEL_ID,
     torch_dtype=torch.float16,
-    revision="fp16"  # use float16 weights for efficiency
+    variant="fp16"  # use float16 weights for efficiency
 )
 
 # Move to Apple Silicon GPU
@@ -581,63 +581,47 @@ def run_live_drawing_loop(steps=5000, delay=0.01):
 # In[184]:
 
 
-def automate_processing():
-    """Automates the full process based on user-uploaded image."""
-    global extracted_data  # Ensure we store extracted information
+def automate_from_image_file(image: Image.Image):
+    global extracted_data, canvas, agents
 
-    # Ask the user to input an image file path
-    image_path = input("Enter the path to your handwriting image: ").strip()
+    # Save image temporarily
+    image_path = "uploaded_image.jpg"
+    image.save(image_path)
 
-    # Extract handwritten text & detect language
+    # Extract
     extracted_text, detected_language = extract_text_from_handwriting(image_path)
-
     if not extracted_text:
-        print("\nFailed to extract text. Stopping process.")
-        return None  # Stop if no text is found
+        return "❌ Could not extract any text from image", None
 
-    # Translate text if needed
     translated_text = translate_to_english(extracted_text) if detected_language.lower() != "english" else extracted_text
-
-    # Analyze emotion
     text_analysis_data = analyze_emotion(translated_text)
-    detected_emotion = text_analysis_data.get("emotion", "Unknown")
-    confidence_score = text_analysis_data.get("confidence", 0.0)
+    composition_style = assign_composition_style()
+    visual_goal = get_visual_goal()
 
-    # Store the extracted information in a global variable
     extracted_data = {
         "extracted_text": extracted_text,
         "language": detected_language,
         "translated_text": translated_text,
-        "emotion": detected_emotion,
-        "confidence": confidence_score,
+        "emotion": text_analysis_data["emotion"],
+        "confidence": text_analysis_data["confidence"],
+        "composition_style": composition_style,
+        "visual_goal": visual_goal
     }
-    
-    extracted_data["composition_style"] = assign_composition_style()
 
-    extracted_data["visual_goal"] = get_visual_goal()
-
-    # Print Final Summary
-    print("\nAutomated Process Complete:")
-    print(f"Extracted Text: {extracted_data['extracted_text']}")
-    print(f"Detected Language: {extracted_data['language']}")
-    print(f"Translated Text: {extracted_data['translated_text'] if extracted_data['language'].lower() != 'english' else 'N/A'}")
-    print(f"Detected Emotion: {extracted_data['emotion']}")
-    print(f"Confidence Score: {extracted_data['confidence']:.2f}")
-    print(f"Assigned Composition Style: {extracted_data['composition_style']}")
-    print(f"Suggested Visual Goal: {extracted_data['visual_goal']}")  
-    
-    generate_image()
-    
-    # Add to canvas and draw
-    add_agent_for_image("generated_image.png")
+    # Generate image and draw
+    generated_image_path = generate_image()
+    agents.clear()  # only draw one image at a time
+    add_agent_for_image(generated_image_path)
     run_live_drawing_loop()
 
-    # return extracted_data  # Return the full stored information
+    # Return summary + final canvas
+    summary = (
+        f"📝 Text: {extracted_text}\n"
+        f"🌐 Language: {detected_language}\n"
+        f"🗣️ Translated: {translated_text if detected_language.lower() != 'english' else 'Already in English'}\n"
+        f"💬 Emotion: {text_analysis_data['emotion']} (Confidence: {text_analysis_data['confidence']:.2f})\n"
+        f"🎨 Composition: {composition_style}\n"
+        f"🌏 Cultural Visual: {visual_goal}"
+    )
 
-
-# In[179]:
-
-
-automate_processing()
-
-
+    return summary, canvas
