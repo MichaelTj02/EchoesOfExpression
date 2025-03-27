@@ -165,6 +165,7 @@ class Agent:
 # Globals
 canvas = Image.new("RGBA", (2560, 1440), (255, 255, 255, 0))
 agents = []
+extracted_data = {}
 
 # ## Process Handwritten Text (OCR, Translation, and Emotion Extraction)
 
@@ -553,27 +554,16 @@ def add_agent_for_image(image_path):
 
 # Show live canvas    
 def show_live_canvas(canvas):
-    canvas_np = np.array(canvas.convert("RGB"))[:, :, ::-1]  # PIL to OpenCV BGR
-    cv2.imshow("Live Canvas", canvas_np)
-    key = cv2.waitKey(1)  # 1 ms delay to refresh window
-    if key == 27:  # Esc key to exit early
-        return False
     return True
 
 def run_live_drawing_loop(steps=5000, delay=0.01):
     for step in range(steps):
         for agent in agents:
             agent.update(canvas)
-
-        if step % 5 == 0:  # Show more frequently for smoother updates
-            if not show_live_canvas(canvas):
-                break  # Exit if Esc is pressed
-
         time.sleep(delay)
 
-    cv2.destroyAllWindows()  # Close the window when done
     canvas.save("final_collaborative_canvas.png")
-    print("Saved as final_collaborative_canvas.png")
+    print("🖼️ Canvas saved as final_collaborative_canvas.png")
 
 
 # ## Testing Automation
