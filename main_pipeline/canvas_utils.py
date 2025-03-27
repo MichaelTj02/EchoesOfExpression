@@ -4,8 +4,7 @@ import random
 import time
 import cv2
 import numpy as np
-
-agents = []
+from matplotlib import pyplot as plt
 
 def init_canvas(width, height):
     return Image.new("RGBA", (width, height), (255, 255, 255, 0))
@@ -47,11 +46,9 @@ class Agent:
             return
 
         x, y = self.queue.popleft()
-        key = (x, y)
-        if key in self.visited:
+        if (x, y) in self.visited:
             return
-
-        self.visited.add(key)
+        self.visited.add((x, y))
 
         patch = self.image.crop((
             max(0, x - self.origin_x),
@@ -100,19 +97,27 @@ def add_agent_for_image(image, canvas, agents_list):
     agent = Agent(image, x, y)
     agents_list.append(agent)
 
-def run_live_drawing_loop(canvas, agents_list, steps=10000, delay=0.01):
-    def show_live_canvas(canvas):
-        canvas_np = np.array(canvas.convert("RGB"))[:, :, ::-1]
-        cv2.imshow("Live Canvas", canvas_np)
-        return cv2.waitKey(1) != 27  # Stop on ESC
-
-    for _ in range(steps):
+def run_live_drawing_loop(canvas, agents_list, steps=5000, delay=0.01):
+    plt.ion()  # Turn on interactive mode
+    fig, ax = plt.subplots()
+    
+    for step in range(steps):
         for agent in agents_list:
             agent.update(canvas)
-        if not show_live_canvas(canvas):
-            break
+
+        if step % 10 == 0:
+            try:
+                ax.imshow(canvas)
+                ax.set_title("Live Collaborative Canvas")
+                ax.axis("off")
+                plt.pause(0.001)
+                ax.clear()  # Clear for next frame
+            except Exception as e:
+                print("⚠️ Display error:", e)
+
         time.sleep(delay)
 
-    cv2.destroyAllWindows()
     canvas.save("final_collaborative_canvas.png")
-    print("Saved as final_collaborative_canvas.png")
+    print("🖼️ Canvas saved as final_collaborative_canvas.png")
+    plt.ioff()
+    plt.close()

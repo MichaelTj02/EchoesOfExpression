@@ -51,6 +51,7 @@ def extract_text_from_base64(base64_image):
                         {"type": "text", "text":
                             "Extract the handwritten text from this image and detect its language."
                             "Return the result in JSON format: {\"text\": \"extracted text\", \"language\": \"detected language\"}."
+                            "Do not add extra explanations, just return valid JSON."
                         },
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"}}
                     ]
