@@ -226,7 +226,6 @@ def extract_text_from_handwriting(image_path):
         )
 
         raw_response = response.choices[0].message.content.strip()
-        # print(f"\n Raw GPT Response: {raw_response}")  # Debugging Output
 
         json_match = re.search(r"\{.*\}", raw_response, re.DOTALL)
         if json_match:
@@ -257,7 +256,6 @@ def translate_to_english(text):
         )
 
         translated_text = response.choices[0].message.content.strip()
-        # print(f"\n Translated Text (English): {translated_text}")  # Debugging output
         return translated_text
 
     except Exception as e:
@@ -282,7 +280,6 @@ def analyze_emotion(text):
         )
 
         raw_response = response.choices[0].message.content.strip()
-        # print(f"\n Raw GPT Response: {raw_response}")  # Debugging output
 
         # Extract JSON using regex if there's extra text
         json_match = re.search(r"\{.*\}", raw_response, re.DOTALL)
@@ -371,7 +368,6 @@ def assign_composition_style():
 
     extracted_data["composition_style"] = composition_style
 
-    # print(f"Assigned Composition Style for {detected_emotion}: {composition_style}") # Debug print
     return composition_style
 
 # Determine visual goal depending on the language detected
@@ -444,9 +440,6 @@ def fetch_cultural_prompt_info():
             # If there's still a language label, remove it
             if content.startswith("json"):
                 content = content[4:].strip()
-
-        # DEBUG PRINT
-        # print("GPT response (cleaned):", content)
 
         # Try parsing JSON
         return json.loads(content)
@@ -581,7 +574,7 @@ def automate_from_image_file(image: Image.Image):
     # Extract
     extracted_text, detected_language = extract_text_from_handwriting(image_path)
     if not extracted_text:
-        return "❌ Could not extract any text from image", None
+        return "Could not extract any text from image", None
 
     translated_text = translate_to_english(extracted_text) if detected_language.lower() != "english" else extracted_text
     text_analysis_data = analyze_emotion(translated_text)

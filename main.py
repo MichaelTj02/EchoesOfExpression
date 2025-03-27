@@ -24,8 +24,8 @@ def process_and_draw(image):
     global agents, canvas, extracted_data
 
     generated_image_path = generate_image()
-    add_agent_for_image(generated_image_path)  # ✅ Add image to agent list
-    run_live_drawing_loop()  # 🌀 Trigger the drawing loop
+    add_agent_for_image(generated_image_path)  # Add image to agent list
+    run_live_drawing_loop()  # Trigger the drawing loop
 
 
     agents = []  # reset drawing agents
