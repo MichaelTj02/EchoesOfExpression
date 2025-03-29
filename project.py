@@ -163,7 +163,9 @@ class Agent:
                     self.queue.append((nx, ny))
 
 # Globals
-canvas = Image.new("RGBA", (2560, 1440), (255, 255, 255, 0))
+CANVAS_WIDTH = 1024
+CANVAS_HEIGHT = 1024
+canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (255, 255, 255, 0))
 agents = []
 extracted_data = {}
 
@@ -521,7 +523,7 @@ def generate_image():
         prompt,
         height=768,
         width=768,
-        num_inference_steps=30,  # slightly higher for better quality
+        num_inference_steps=30, # slightly higher for better quality
         guidance_scale=8.0
     ).images[0]
 
@@ -537,8 +539,8 @@ def add_agent_for_image(image_path):
     image = Image.open(image_path).convert("RGBA")
     image = image.resize((600, 600))
 
-    x = random.randint(0, 2560 - 600)
-    y = random.randint(0, 1440 - 600)
+    x = random.randint(0, CANVAS_WIDTH - 600)
+    y = random.randint(0, CANVAS_HEIGHT - 600)
 
     new_agent = Agent(image, x, y)
     agents.append(new_agent)
@@ -552,12 +554,12 @@ def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
             agent.update(canvas)
 
         if update_callback and step % 5 == 0:
-            update_callback(canvas)  # 🔁 Push update to GUI
+            update_callback(canvas)  # Push update to GUI
 
         time.sleep(delay)
 
     canvas.save("final_collaborative_canvas.png")
-    print("🖼️ Canvas saved as final_collaborative_canvas.png")
+    print("Canvas saved as final_collaborative_canvas.png")
 
 def automate_from_image_file(image_input, update_callback=None):
     global extracted_data, canvas, agents

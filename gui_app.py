@@ -5,7 +5,7 @@ import threading
 import os
 
 # Import your automation method
-from project import automate_from_image_file, canvas
+from project import automate_from_image_file, canvas, CANVAS_WIDTH, CANVAS_HEIGHT
 
 # ----------- GUI Setup -----------
 
