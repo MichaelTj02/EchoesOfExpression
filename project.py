@@ -546,18 +546,20 @@ def add_agent_for_image(image_path):
 def show_live_canvas(canvas):
     return True  # placeholder, no-op now
 
-def run_live_drawing_loop(steps=5000, delay=0.01):
+def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
     for step in range(steps):
         for agent in agents:
             agent.update(canvas)
+
+        if update_callback and step % 5 == 0:
+            update_callback(canvas)  # 🔁 Push update to GUI
+
         time.sleep(delay)
 
     canvas.save("final_collaborative_canvas.png")
     print("🖼️ Canvas saved as final_collaborative_canvas.png")
 
-from PIL import Image
-
-def automate_from_image_file(image_input):
+def automate_from_image_file(image_input, update_callback=None):
     global extracted_data, canvas, agents
     
     extracted_data = {} # clear old values
@@ -593,7 +595,7 @@ def automate_from_image_file(image_input):
     generated_image_path, prompt = generate_image()
     agents.clear()
     add_agent_for_image(generated_image_path)
-    run_live_drawing_loop()
+    run_live_drawing_loop(update_callback=update_callback)
 
     summary = (
         f"Text: {extracted_text}\n"

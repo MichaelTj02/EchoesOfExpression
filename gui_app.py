@@ -34,33 +34,30 @@ class CulturalAIGUI:
         )
 
         if file_path:
-            self.output_text.insert(tk.END, f"\n🖼️ Selected: {file_path}\n")
-            self.output_text.insert(tk.END, "🔄 Processing...\n")
+            self.output_text.insert(tk.END, f"\nSelected: {file_path}\n")
+            self.output_text.insert(tk.END, "Processing...\n")
             self.output_text.see(tk.END)
 
             # Run in background to keep UI responsive
             threading.Thread(target=self.run_processing, args=(file_path,), daemon=True).start()
 
+    def update_canvas_preview(self, canvas):
+        canvas.save("latest_canvas_preview.png")
+        preview_img = Image.open("latest_canvas_preview.png").resize((500, 300))
+        preview_tk = ImageTk.PhotoImage(preview_img)
+        self.canvas_preview_label.config(image=preview_tk)
+        self.canvas_preview_label.image = preview_tk  # Keep reference
+
     def run_processing(self, image_path):
         try:
-            # Call your complete AI pipeline
-            summary, _ = automate_from_image_file(image_path)
+            summary, _ = automate_from_image_file(image_path, update_callback=self.update_canvas_preview)
 
-            # Display updated canvas
-            canvas.save("latest_canvas_preview.png")
-            preview_img = Image.open("latest_canvas_preview.png").resize((500, 300))
-            preview_tk = ImageTk.PhotoImage(preview_img)
-
-            # Update UI with preview and message
-            self.canvas_preview_label.config(image=preview_tk)
-            self.canvas_preview_label.image = preview_tk  # Keep a reference!
-
-            self.output_text.insert(tk.END, f"\n{summary}\n\n✅ Drawing complete.\n")
+            self.output_text.insert(tk.END, f"\n{summary}\nDrawing complete.\n")
             self.output_text.see(tk.END)
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
-            self.output_text.insert(tk.END, f"\n❌ Error: {e}\n")
+            self.output_text.insert(tk.END, f"\nError: {e}\n")
             self.output_text.see(tk.END)
 
 # ----------- Run App -----------
