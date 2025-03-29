@@ -515,7 +515,6 @@ def build_dynamic_prompt():
 def generate_image():
     """Generates an image and assigns it to an agent for gradual drawing."""
     prompt = build_dynamic_prompt()
-    print(f"Generating Image with Prompt: {prompt}")
 
     # Generate the image using Stable Diffusion 2.1 at native 768x768 resolution
     image = pipeline(
@@ -529,9 +528,8 @@ def generate_image():
     # Save image
     image_path = "generated_image.png"
     image.save(image_path)
-    print(f"Image saved as: {image_path}")
 
-    return image_path  # or transparent_image if you're removing background
+    return image_path, prompt
 
 def add_agent_for_image(image_path):
     global agents
@@ -545,9 +543,8 @@ def add_agent_for_image(image_path):
     new_agent = Agent(image, x, y)
     agents.append(new_agent)
 
-# Show live canvas    
 def show_live_canvas(canvas):
-    return True
+    return True  # placeholder, no-op now
 
 def run_live_drawing_loop(steps=5000, delay=0.01):
     for step in range(steps):
@@ -558,20 +555,21 @@ def run_live_drawing_loop(steps=5000, delay=0.01):
     canvas.save("final_collaborative_canvas.png")
     print("🖼️ Canvas saved as final_collaborative_canvas.png")
 
+from PIL import Image
 
-# ## Testing Automation
-
-# In[184]:
-
-
-def automate_from_image_file(image: Image.Image):
+def automate_from_image_file(image_input):
     global extracted_data, canvas, agents
+    
+    extracted_data = {} # clear old values
 
-    # Save image temporarily
-    image_path = "uploaded_image.jpg"
-    image.save(image_path)
+    # Determine if it's a file path (str) or an Image object
+    if isinstance(image_input, str):
+        image_path = image_input
+    else:
+        image_path = "uploaded_image.jpg"
+        image_input.save(image_path)
 
-    # Extract
+    # Extract handwritten text & language
     extracted_text, detected_language = extract_text_from_handwriting(image_path)
     if not extracted_text:
         return "Could not extract any text from image", None
@@ -591,20 +589,20 @@ def automate_from_image_file(image: Image.Image):
         "visual_goal": visual_goal
     }
 
-    # Generate image and draw
-    generated_image_path = generate_image()
-    agents.clear()  # only draw one image at a time
+    # Generate and draw
+    generated_image_path, prompt = generate_image()
+    agents.clear()
     add_agent_for_image(generated_image_path)
     run_live_drawing_loop()
 
-    # Return summary + final canvas
     summary = (
-        f"📝 Text: {extracted_text}\n"
-        f"🌐 Language: {detected_language}\n"
-        f"🗣️ Translated: {translated_text if detected_language.lower() != 'english' else 'Already in English'}\n"
-        f"💬 Emotion: {text_analysis_data['emotion']} (Confidence: {text_analysis_data['confidence']:.2f})\n"
-        f"🎨 Composition: {composition_style}\n"
-        f"🌏 Cultural Visual: {visual_goal}"
+        f"Text: {extracted_text}\n"
+        f"Language: {detected_language}\n"
+        f"Translated: {translated_text if detected_language.lower() != 'english' else 'Already in English'}\n"
+        f"Emotion: {text_analysis_data['emotion']} (Confidence: {text_analysis_data['confidence']:.2f})\n"
+        f"Composition: {composition_style}\n"
+        f"Cultural Visual: {visual_goal}\n"
+        f"Prompt: {prompt}"
     )
 
     return summary, canvas
