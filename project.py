@@ -502,14 +502,22 @@ def generate_image():
 
     return image_path, prompt
 
-def intersect(box1, box2):
-    # function to check if agent location is overlapping
-    return not (
-        box1[2] <= box2[0] or  # right <= left
-        box1[0] >= box2[2] or  # left >= right
-        box1[3] <= box2[1] or  # bottom <= top
-        box1[1] >= box2[3]     # top >= bottom
-    )
+def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.2):
+    # Calculate intersection box
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    inter_width = max(0, x2 - x1)
+    inter_height = max(0, y2 - y1)
+    inter_area = inter_width * inter_height
+
+    area1 = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    area2 = (box2[2] - box2[0]) * (box2[3] - box2[1])
+    overlap_ratio = inter_area / min(area1, area2)
+
+    return overlap_ratio > max_overlap_ratio
 
 def add_agent_for_image(image_path):
     global agents, canvas, used_regions
@@ -527,7 +535,7 @@ def add_agent_for_image(image_path):
 
         # Check overlap with other agents
         new_box = (x, y, x + new_width, y + new_height)
-        overlap = any(intersect(new_box, region) for region in used_regions)
+        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.2) for region in used_regions)
 
         if not overlap:
             used_regions.append(new_box)
