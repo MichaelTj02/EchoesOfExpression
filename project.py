@@ -19,9 +19,8 @@ import torch
 from diffusers import StableDiffusionPipeline
 
 # For canvas and drawing
-from PIL import Image, ImageEnhance, ImageDraw
+from PIL import Image
 import random
-from IPython.display import display, clear_output
 import time # For live drawing
 from collections import deque
 import cv2
@@ -63,44 +62,19 @@ print("ChatGPT Response:", response.choices[0].message.content)
 
 # In[14]:
 
-
 class Agent:
     def __init__(self, image, start_x, start_y, patch_size=5):
-        self.image = image.convert("RGBA")  # Ensure image has alpha
+        self.image = image.convert("RGBA")
         self.patch_size = patch_size
         self.origin_x = start_x
         self.origin_y = start_y
         self.visited = set()
         self.queue = deque()
 
-        # Drawing mode determines shape of reveal
-        self.drawing_mode = random.choice([
-            "center_out", 
-            "top_down", 
-            "left_to_right", 
-            "spiral", 
-            "organic_noise"
-        ])
-
+        # Start in center
         center_x = self.origin_x + self.image.width // 2
         center_y = self.origin_y + self.image.height // 2
-
-        if self.drawing_mode == "center_out" or self.drawing_mode == "spiral":
-            self.queue.append((center_x, center_y))
-
-        elif self.drawing_mode == "top_down":
-            for x in range(self.origin_x, self.origin_x + self.image.width, self.patch_size):
-                self.queue.append((x, self.origin_y))
-
-        elif self.drawing_mode == "left_to_right":
-            for y in range(self.origin_y, self.origin_y + self.image.height, self.patch_size):
-                self.queue.append((self.origin_x, y))
-
-        elif self.drawing_mode == "organic_noise":
-            for _ in range(10):
-                rx = random.randint(self.origin_x, self.origin_x + self.image.width - self.patch_size)
-                ry = random.randint(self.origin_y, self.origin_y + self.image.height - self.patch_size)
-                self.queue.append((rx, ry))
+        self.queue.append((center_x, center_y))
 
     def update(self, canvas):
         if not self.queue:
@@ -113,20 +87,22 @@ class Agent:
 
         self.visited.add(key)
 
-        # Get image patch
+        # Crop patch from image
+        local_x = max(0, x - self.origin_x)
+        local_y = max(0, y - self.origin_y)
         patch = self.image.crop((
-            max(0, x - self.origin_x),
-            max(0, y - self.origin_y),
-            max(0, x - self.origin_x + self.patch_size),
-            max(0, y - self.origin_y + self.patch_size)
+            local_x,
+            local_y,
+            local_x + self.patch_size,
+            local_y + self.patch_size
         ))
 
-        # Fade alpha based on distance from center
+        # Fade alpha by distance
         center_x = self.origin_x + self.image.width // 2
         center_y = self.origin_y + self.image.height // 2
         dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
         max_dist = ((self.image.width // 2) ** 2 + (self.image.height // 2) ** 2) ** 0.5
-        fade = max(0.2, 1.0 - (dist / max_dist))  # Avoid full transparency
+        fade = max(0.15, 1.0 - (dist / max_dist) ** 1.5)  # sharper falloff
 
         patch = patch.copy()
         r, g, b, a = patch.split()
@@ -135,28 +111,14 @@ class Agent:
 
         canvas.paste(patch, (x, y), patch)
 
-        # Base directions (4-neighbors)
-        directions = [
-            (self.patch_size, 0), (-self.patch_size, 0),
-            (0, self.patch_size), (0, -self.patch_size)
-        ]
-
-        # Modify expansion pattern
-        if self.drawing_mode == "spiral":
-            directions = sorted(directions, key=lambda d: random.random() + 0.3 * (d[0] + d[1]))
-
-        elif self.drawing_mode == "top_down":
-            directions = sorted(directions, key=lambda d: d[1])  # prioritize y (vertical)
-
-        elif self.drawing_mode == "left_to_right":
-            directions = sorted(directions, key=lambda d: d[0])  # prioritize x (horizontal)
-
-        elif self.drawing_mode == "organic_noise":
-            random.shuffle(directions)
-
-        # Expand to neighbors
-        for dx, dy in directions:
+        # Expand in noisy radial directions
+        for _ in range(6):  # 6 directions
+            angle = random.uniform(0, 2 * np.pi)
+            radius = random.randint(1, self.patch_size)
+            dx = int(radius * np.cos(angle))
+            dy = int(radius * np.sin(angle))
             nx, ny = x + dx, y + dy
+
             if (nx, ny) not in self.visited:
                 if self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
                    self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
@@ -510,7 +472,7 @@ def build_dynamic_prompt():
         f"inspired by traditional {art_form}, "
         f"featuring {motif}, layered with {script}, "
         f"with a {composition_style} composition. "
-        f"Rendered in 768x768, cinematic lighting, textured brushwork, Van Gogh style, and borderless."
+        f"Rendered in cinematic lighting, textured brushwork, Van Gogh style, and borderless."
     )
 
     return prompt
@@ -521,7 +483,7 @@ def generate_image():
     
     size_options = [
         (768, 512), (512, 768), (640, 640), (768, 576),
-        (576, 768), (720, 540), (540, 720), (640, 480)
+        (576, 768), (704, 512), (512, 704), (640, 480)
     ]
     width, height = random.choice(size_options)
 
@@ -553,7 +515,7 @@ def add_agent_for_image(image_path):
     global agents, canvas, used_regions
 
     image = Image.open(image_path).convert("RGBA")
-    resize_ratio = 0.4  # Scale down to 40% of original image
+    resize_ratio = 0.6  # Scale down to 40% of original image
     new_width = int(image.width * resize_ratio)
     new_height = int(image.height * resize_ratio)
     image = image.resize((new_width, new_height), Image.LANCZOS)
@@ -564,7 +526,7 @@ def add_agent_for_image(image_path):
         y = random.randint(0, canvas.height - new_height)
 
         # Check overlap with other agents
-        new_box = (x, y, x + 600, y + 600)
+        new_box = (x, y, x + new_width, y + new_height)
         overlap = any(intersect(new_box, region) for region in used_regions)
 
         if not overlap:
@@ -625,7 +587,7 @@ def automate_from_image_file(image_input, update_callback=None):
 
     # Generate and draw
     generated_image_path, prompt = generate_image()
-    agents.clear()
+    # agents.clear()
     add_agent_for_image(generated_image_path)
     run_live_drawing_loop(update_callback=update_callback)
 
