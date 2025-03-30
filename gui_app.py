@@ -56,25 +56,25 @@ class CulturalAIGUI:
             ).start()
 
     def update_canvas_preview(self, canvas):
+        # Save canvas temporarily
         canvas.save("latest_canvas_preview.png")
-        
-        # time.sleep(0.05)
-        
-        # preview_img = Image.open("latest_canvas_preview.png").convert("RGBA")
-        
-        time.sleep(0.05)  # Small delay to ensure write is completed
+        time.sleep(0.05)  # Ensure file is written
 
-        # Safely open and fully load the image before using
+        # Open and fully load the canvas image
         with open("latest_canvas_preview.png", "rb") as f:
             preview_img = Image.open(f)
-            preview_img.load()  # Force the image to load fully into memory
+            preview_img.load()
 
-        preview_img = preview_img.convert("RGBA")
-        
-        preview_img = ImageOps.contain(preview_img, (960, 540), method=Image.LANCZOS)
-        preview_tk = ImageTk.PhotoImage(preview_img)
+        bg_color = (240, 230, 210, 255)
+        background = Image.new("RGBA", preview_img.size, bg_color)
+        composite = Image.alpha_composite(background, preview_img.convert("RGBA"))
+
+        resized = ImageOps.contain(composite, (960, 540), method=Image.LANCZOS)
+        preview_tk = ImageTk.PhotoImage(resized)
+
+        # Update GUI
         self.canvas_preview_label.config(image=preview_tk)
-        self.canvas_preview_label.image = preview_tk 
+        self.canvas_preview_label.image = preview_tk
 
     def run_processing(self, image_path):
         try:

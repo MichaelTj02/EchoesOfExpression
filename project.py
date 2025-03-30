@@ -64,14 +64,19 @@ print("ChatGPT Response:", response.choices[0].message.content)
 
 class Agent:
     def __init__(self, image, start_x, start_y, patch_size=5):
-        self.image = image.convert("RGBA")
         self.patch_size = patch_size
         self.origin_x = start_x
         self.origin_y = start_y
         self.visited = set()
         self.queue = deque()
 
-        # Start in center
+        # Apply uniform fading to the full image
+        self.image = image.convert("RGBA")
+        r, g, b, a = self.image.split()
+        a = a.point(lambda p: int(p * 0.65))  # opacity for blending
+        self.image.putalpha(a)
+
+        # Start drawing from center
         center_x = self.origin_x + self.image.width // 2
         center_y = self.origin_y + self.image.height // 2
         self.queue.append((center_x, center_y))
@@ -97,22 +102,10 @@ class Agent:
             local_y + self.patch_size
         ))
 
-        # Fade alpha by distance
-        center_x = self.origin_x + self.image.width // 2
-        center_y = self.origin_y + self.image.height // 2
-        dist = ((x - center_x) ** 2 + (y - center_y) ** 2) ** 0.5
-        max_dist = ((self.image.width // 2) ** 2 + (self.image.height // 2) ** 2) ** 0.5
-        fade = max(0.15, 1.0 - (dist / max_dist) ** 1.5)  # sharper falloff
-
-        patch = patch.copy()
-        r, g, b, a = patch.split()
-        a = a.point(lambda p: int(p * fade))
-        patch.putalpha(a)
-
         canvas.paste(patch, (x, y), patch)
 
-        # Expand in noisy radial directions
-        for _ in range(6):  # 6 directions
+        # Expand outward with noisy radial directions
+        for _ in range(6):
             angle = random.uniform(0, 2 * np.pi)
             radius = random.randint(1, self.patch_size)
             dx = int(radius * np.cos(angle))
@@ -127,7 +120,7 @@ class Agent:
 # Globals
 CANVAS_WIDTH = 1920
 CANVAS_HEIGHT = 1080
-canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (255, 255, 255, 0))
+canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (240, 230, 210, 255))
 agents = []
 extracted_data = {}
 used_regions = []  # to track agent locations
@@ -549,13 +542,9 @@ def show_live_canvas(canvas):
     return True  # placeholder, no-op now
 
 def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
-    # for step in range(steps):
-    #     for agent in agents:
-    #         agent.update(canvas)
-        
     for step in range(steps):
         for agent in agents:
-            for _ in range(5):  # range increase drawing speed
+            for _ in range(15):  # range increase drawing speed
                 agent.update(canvas)
 
         if update_callback and step % 5 == 0:
