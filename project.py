@@ -163,11 +163,12 @@ class Agent:
                     self.queue.append((nx, ny))
 
 # Globals
-CANVAS_WIDTH = 1024
-CANVAS_HEIGHT = 1024
+CANVAS_WIDTH = 1920
+CANVAS_HEIGHT = 1080
 canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (255, 255, 255, 0))
 agents = []
 extracted_data = {}
+used_regions = []  # to track agent locations
 
 # ## Process Handwritten Text (OCR, Translation, and Emotion Extraction)
 
@@ -517,12 +518,18 @@ def build_dynamic_prompt():
 def generate_image():
     """Generates an image and assigns it to an agent for gradual drawing."""
     prompt = build_dynamic_prompt()
+    
+    size_options = [
+        (768, 512), (512, 768), (640, 640), (768, 576),
+        (576, 768), (720, 540), (540, 720), (640, 480)
+    ]
+    width, height = random.choice(size_options)
 
-    # Generate the image using Stable Diffusion 2.1 at native 768x768 resolution
+    # Generate the image using Stable Diffusion 2.1 
     image = pipeline(
         prompt,
-        height=768,
-        width=768,
+        height=height,
+        width=width,
         num_inference_steps=30, # slightly higher for better quality
         guidance_scale=8.0
     ).images[0]
@@ -533,17 +540,40 @@ def generate_image():
 
     return image_path, prompt
 
+def intersect(box1, box2):
+    # function to check if agent location is overlapping
+    return not (
+        box1[2] <= box2[0] or  # right <= left
+        box1[0] >= box2[2] or  # left >= right
+        box1[3] <= box2[1] or  # bottom <= top
+        box1[1] >= box2[3]     # top >= bottom
+    )
+
 def add_agent_for_image(image_path):
-    global agents
+    global agents, canvas, used_regions
 
     image = Image.open(image_path).convert("RGBA")
-    image = image.resize((600, 600))
+    resize_ratio = 0.4  # Scale down to 40% of original image
+    new_width = int(image.width * resize_ratio)
+    new_height = int(image.height * resize_ratio)
+    image = image.resize((new_width, new_height), Image.LANCZOS)
 
-    x = random.randint(0, CANVAS_WIDTH - 600)
-    y = random.randint(0, CANVAS_HEIGHT - 600)
+    max_attempts = 100
+    for _ in range(max_attempts):
+        x = random.randint(0, canvas.width - new_width)
+        y = random.randint(0, canvas.height - new_height)
 
-    new_agent = Agent(image, x, y)
-    agents.append(new_agent)
+        # Check overlap with other agents
+        new_box = (x, y, x + 600, y + 600)
+        overlap = any(intersect(new_box, region) for region in used_regions)
+
+        if not overlap:
+            used_regions.append(new_box)
+            new_agent = Agent(image, x, y)
+            agents.append(new_agent)
+            return
+
+    print("Could not place agent without overlap.")
 
 def show_live_canvas(canvas):
     return True  # placeholder, no-op now
