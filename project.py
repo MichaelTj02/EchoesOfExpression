@@ -5,6 +5,9 @@ import os
 # Open AI GPT-4
 import openai
 
+# For agent
+import math
+
 # Handwriting OCR
 import cv2
 import numpy as np
@@ -81,6 +84,14 @@ class Agent:
         center_y = self.origin_y + self.image.height // 2
         self.queue.append((center_x, center_y))
 
+        # Add shape mode for drawing variation
+        self.shape_mode = random.choice([
+            "circle_fade", 
+            "soft_square", 
+            "starburst", 
+            "organic"
+        ])
+
     def update(self, canvas):
         if not self.queue:
             return
@@ -102,15 +113,50 @@ class Agent:
             local_y + self.patch_size
         ))
 
+        # Calculate shape-based fade
+        center_x = self.origin_x + self.image.width // 2
+        center_y = self.origin_y + self.image.height // 2
+        dx = abs(x - center_x)
+        dy = abs(y - center_y)
+        dist = math.sqrt(dx ** 2 + dy ** 2)
+        max_dist = math.sqrt((self.image.width / 2) ** 2 + (self.image.height / 2) ** 2)
+
+        # Shape-based fading logic
+        if self.shape_mode == "circle_fade":
+            fade = max(0.15, 1.0 - (dist / max_dist) ** 1.2)
+
+        elif self.shape_mode == "soft_square":
+            fx = dx / (self.image.width / 2)
+            fy = dy / (self.image.height / 2)
+            fade = max(0.15, 1.0 - max(fx, fy) ** 1.8)
+
+        elif self.shape_mode == "starburst":
+            angle = math.atan2(dy, dx + 1e-5)  # prevent div by 0
+            wave = (math.sin(angle * 5) + 1) / 2  # 5-point burst
+            fade = max(0.15, 1.0 - (dist / max_dist) * wave)
+
+        elif self.shape_mode == "organic":
+            noise = random.uniform(0.85, 1.0)
+            fade = max(0.1, (1.0 - (dist / max_dist)) * noise)
+
+        else:
+            fade = 1.0  # fallback
+
+        # Apply fade to alpha channel
+        patch = patch.copy()
+        r, g, b, a = patch.split()
+        a = a.point(lambda p: int(p * fade))
+        patch.putalpha(a)
+
+        # Paste patch
         canvas.paste(patch, (x, y), patch)
 
-        # Expand outward with noisy radial directions
+        # Expand in noisy radial directions
         for _ in range(6):
             angle = random.uniform(0, 2 * np.pi)
             radius = random.randint(1, self.patch_size)
-            dx = int(radius * np.cos(angle))
-            dy = int(radius * np.sin(angle))
-            nx, ny = x + dx, y + dy
+            nx = x + int(radius * math.cos(angle))
+            ny = y + int(radius * math.sin(angle))
 
             if (nx, ny) not in self.visited:
                 if self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
