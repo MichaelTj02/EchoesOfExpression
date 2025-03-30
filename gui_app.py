@@ -3,6 +3,7 @@ from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import threading
 import os
+import time
 
 # Import from project.py
 from project import automate_from_image_file, canvas, CANVAS_WIDTH, CANVAS_HEIGHT
@@ -56,8 +57,20 @@ class CulturalAIGUI:
 
     def update_canvas_preview(self, canvas):
         canvas.save("latest_canvas_preview.png")
+        
+        # time.sleep(0.05)
+        
+        # preview_img = Image.open("latest_canvas_preview.png").convert("RGBA")
+        
+        time.sleep(0.05)  # Small delay to ensure write is completed
 
-        preview_img = Image.open("latest_canvas_preview.png").convert("RGBA")
+        # Safely open and fully load the image before using
+        with open("latest_canvas_preview.png", "rb") as f:
+            preview_img = Image.open(f)
+            preview_img.load()  # Force the image to load fully into memory
+
+        preview_img = preview_img.convert("RGBA")
+        
         preview_img = ImageOps.contain(preview_img, (960, 540), method=Image.LANCZOS)
         preview_tk = ImageTk.PhotoImage(preview_img)
         self.canvas_preview_label.config(image=preview_tk)
