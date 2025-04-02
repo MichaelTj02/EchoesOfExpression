@@ -596,7 +596,7 @@ def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
         if update_callback and step % 5 == 0:
             update_callback(canvas)  # Push update to GUI
 
-        # time.sleep(delay)
+        time.sleep(delay)
 
     canvas.save("final_collaborative_canvas.png")
     print("Canvas saved as final_collaborative_canvas.png")
