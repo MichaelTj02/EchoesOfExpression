@@ -51,6 +51,9 @@ python gui_app.py
 
 - **OpenAI API Key needed to run the system.**  
   The system relies on OpenAI's GPT-4o for its OCR and NLP system so a key is needed. Create a .env file in the folder and put your key inside.
+
+- **System requirements**  
+  Running this system locally requires Python 3.9 or later, at least 16GB of RAM, and a GPU with a minimum of 6GB VRAM (such as an NVIDIA RTX 2060 or higher) to support Stable Diffusion 2.1.
 ---
 
 ## 💾 Output

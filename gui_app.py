@@ -2,7 +2,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 from PIL import Image, ImageTk, ImageOps
 import threading
-import os
 import time
 
 # Import from project.py

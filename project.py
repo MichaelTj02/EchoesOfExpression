@@ -89,7 +89,7 @@ class Agent:
             "organic"
         ])
 
-    def create_soft_mask(self, size, blur_radius=3, strength=0.85):
+    def create_soft_mask(self, size, blur_radius=5, strength=0.85):
         mask = Image.new("L", (size, size), 0)
         draw = ImageDraw.Draw(mask)
         draw.ellipse((0, 0, size, size), fill=255)
@@ -127,15 +127,15 @@ class Agent:
 
         # Shape-based fade
         if self.shape_mode == "circle_fade":
-            fade = max(0.15, 1.0 - (dist / max_dist) ** 1.2)
+            fade = max(0.35, 1.0 - (dist / max_dist) ** 1.2)
         elif self.shape_mode == "soft_square":
             fx = dx / (self.image.width / 2)
             fy = dy / (self.image.height / 2)
-            fade = max(0.15, 1.0 - max(fx, fy) ** 1.8)
+            fade = max(0.35, 1.0 - max(fx, fy) ** 1.8)
         elif self.shape_mode == "starburst":
             angle = math.atan2(dy, dx + 1e-5)
             wave = (math.sin(angle * 5) + 1) / 2
-            fade = max(0.15, 1.0 - (dist / max_dist) * wave)
+            fade = max(0.35, 1.0 - (dist / max_dist) * wave)
         elif self.shape_mode == "organic":
             noise = random.uniform(0.85, 1.0)
             fade = max(0.1, (1.0 - (dist / max_dist)) * noise)
@@ -443,10 +443,16 @@ pipeline = StableDiffusionPipeline.from_pretrained(
     variant="fp16"  # use float16 weights for efficiency
 )
 
-# Move to Apple Silicon GPU
-device = "mps" if torch.backends.mps.is_available() else "cpu"
+# Device selection: prioritize CUDA → MPS → CPU
+if torch.cuda.is_available():
+    device = "cuda"
+elif torch.backends.mps.is_available():
+    device = "mps"
+else:
+    device = "cpu"
+    
 pipeline.to(device)
-# Turn off NSFW filters due to overlapping stuff that may be detected as NSFW
+# Turn off NSFW filters due to overlapping stuff that may be flagged as NSFW
 pipeline.safety_checker = None
 
 # Optimizations
@@ -502,7 +508,7 @@ def generate_image():
 
     return image_path, prompt
 
-def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.2):
+def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.4):
     # Calculate intersection box
     x1 = max(box1[0], box2[0])
     y1 = max(box1[1], box2[1])
@@ -564,7 +570,6 @@ def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
     flattened = Image.alpha_composite(background, canvas)
     flattened.save("image/final_collaborative_canvas.png")
 
-    # canvas.save("final_collaborative_canvas.png")
     print("Canvas saved in image folder as final_collaborative_canvas.png")
 
 def automate_from_image_file(image_input, update_callback=None):
@@ -601,7 +606,7 @@ def automate_from_image_file(image_input, update_callback=None):
 
     # Generate and draw
     generated_image_path, prompt = generate_image()
-    # agents.clear()
+ 
     add_agent_for_image(generated_image_path)
     run_live_drawing_loop(update_callback=update_callback)
 
