@@ -449,7 +449,7 @@ def fetch_cultural_prompt_info():
         return json.loads(content)
 
     except json.JSONDecodeError as je:
-        print("⚠️ Failed to parse GPT response as JSON.")
+        print("Failed to parse GPT response as JSON.")
         print("Raw response:\n", content)
         return {
             "culture": detected_language,
@@ -590,7 +590,7 @@ def show_live_canvas(canvas):
 def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
     for step in range(steps):
         for agent in agents:
-            for _ in range(15):  # range increase drawing speed
+            for _ in range(15):  # range increase drawing space
                 agent.update(canvas)
 
         if update_callback and step % 5 == 0:
