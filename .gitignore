@@ -9,3 +9,8 @@ __pycache__/
 
 # Certs & keys
 *.pem
+
+# Images of canvas and generated image
+final_collaborative_canvas.png
+generated_image.png
+latest_canvas_preview.png
