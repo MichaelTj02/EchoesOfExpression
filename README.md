@@ -55,9 +55,9 @@ python gui_app.py
 
 ## 💾 Output
 
-- The final full-size collaborative canvas will be saved as:  
+- The final full-size collaborative canvas will be saved at:  
   ```
-  final_collaborative_canvas.png
+  image/final_collaborative_canvas.png
   ```
 
 ---
