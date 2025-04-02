@@ -54,6 +54,9 @@ python gui_app.py
 
 - **System requirements**  
   Running this system locally requires Python 3.9 or later, at least 16GB of RAM, and a GPU with a minimum of 6GB VRAM (such as an NVIDIA RTX 2060 or higher) to support Stable Diffusion 2.1.
+
+- **Requirements.txt**  
+  Check the requirements.txt file to install all required libraries to run the system.
 ---
 
 ## 💾 Output
