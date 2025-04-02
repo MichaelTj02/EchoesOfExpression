@@ -529,12 +529,12 @@ def add_agent_for_image(image_path):
     global agents, canvas, used_regions
 
     image = Image.open(image_path).convert("RGBA")
-    resize_ratio = 0.6  # Scale down to 40% of original image
+    resize_ratio = 0.6  # Scale down to 60% of original image
     new_width = int(image.width * resize_ratio)
     new_height = int(image.height * resize_ratio)
     image = image.resize((new_width, new_height), Image.LANCZOS)
 
-    max_attempts = 100
+    max_attempts = 150
     for _ in range(max_attempts):
         x = random.randint(0, canvas.width - new_width)
         y = random.randint(0, canvas.height - new_height)
@@ -557,13 +557,13 @@ def show_live_canvas(canvas):
 def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
     for step in range(steps):
         for agent in agents:
-            for _ in range(15):  # range increase drawing space
+            for _ in range(8):  # range increase drawing space
                 agent.update(canvas)
 
         if update_callback and step % 5 == 0:
             update_callback(canvas)  # Push update to GUI
 
-        time.sleep(delay)
+        # time.sleep(delay)
     
     # flatten image before saving
     background = Image.new("RGBA", canvas.size, (240, 230, 210, 255))
