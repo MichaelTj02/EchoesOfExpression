@@ -13,7 +13,7 @@ from project import automate_from_image_file, canvas, CANVAS_WIDTH, CANVAS_HEIGH
 class CulturalAIGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("✍️ Cultural AI Drawing System")
+        self.root.title("🖌️ Echoes of Expression")
         self.root.geometry("1280x1024")
 
         # Upload button
@@ -45,8 +45,8 @@ class CulturalAIGUI:
 
         if file_path:
             self.output_text.delete("1.0", tk.END)
-            self.output_text.insert(tk.END, f"🖼️ Selected: {file_path}\n")
-            self.output_text.insert(tk.END, "🔄 Processing...\n")
+            self.output_text.insert(tk.END, f"Selected: {file_path}\n")
+            self.output_text.insert(tk.END, "Processing input...\n")
             self.output_text.see(tk.END)
 
             threading.Thread(
@@ -82,10 +82,10 @@ class CulturalAIGUI:
                 image_input=image_path, 
                 update_callback=self.update_canvas_preview
             )
-            self.output_text.insert(tk.END, f"\n✅ Drawing complete.\n\n{summary}")
+            self.output_text.insert(tk.END, f"\nDrawing complete.\n\n{summary}")
             self.output_text.see(tk.END)
         except Exception as e:
-            self.output_text.insert(tk.END, f"\n❌ Error: {e}\n")
+            self.output_text.insert(tk.END, f"\nError: {e}\n")
             self.output_text.see(tk.END)
             messagebox.showerror("Processing Error", str(e))
 
