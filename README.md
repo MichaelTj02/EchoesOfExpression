@@ -49,7 +49,7 @@ python gui_app.py
 - **Only input one image at a time.**  
   Submitting multiple images simultaneously may crash the system.
 
-- **OpenAI API Key needed to run the system**
+- **OpenAI API Key needed to run the system.**
   The system relies on OpenAI's GPT-4o for its OCR and NLP system so a key is needed. Create a .env file in the folder and put your key inside.
 
 ---
