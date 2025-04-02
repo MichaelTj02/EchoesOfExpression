@@ -22,7 +22,7 @@ import torch
 from diffusers import StableDiffusionPipeline
 
 # For canvas and drawing
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 import random
 import time # For live drawing
 from collections import deque
@@ -61,10 +61,7 @@ print("API Key Loaded Successfully!")
 print("ChatGPT Response:", response.choices[0].message.content)
 
 
-# ## Initialize Drawing Agents (Reactive Systems)
-
-# In[14]:
-
+# ## Drawing Agents (Reactive Systems)
 class Agent:
     def __init__(self, image, start_x, start_y, patch_size=5):
         self.patch_size = patch_size
@@ -73,24 +70,31 @@ class Agent:
         self.visited = set()
         self.queue = deque()
 
-        # Apply uniform fading to the full image
+        # Global fading applied once
         self.image = image.convert("RGBA")
         r, g, b, a = self.image.split()
-        a = a.point(lambda p: int(p * 0.65))  # opacity for blending
+        a = a.point(lambda p: int(p * 0.65))  # Global fade
         self.image.putalpha(a)
 
-        # Start drawing from center
+        # Start from center
         center_x = self.origin_x + self.image.width // 2
         center_y = self.origin_y + self.image.height // 2
         self.queue.append((center_x, center_y))
 
-        # Add shape mode for drawing variation
+        # Drawing style
         self.shape_mode = random.choice([
             "circle_fade", 
             "soft_square", 
             "starburst", 
             "organic"
         ])
+
+    def create_soft_mask(self, size, blur_radius=3, strength=0.85):
+        mask = Image.new("L", (size, size), 0)
+        draw = ImageDraw.Draw(mask)
+        draw.ellipse((0, 0, size, size), fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(blur_radius))
+        return mask.point(lambda p: int(p * strength))
 
     def update(self, canvas):
         if not self.queue:
@@ -113,7 +117,7 @@ class Agent:
             local_y + self.patch_size
         ))
 
-        # Calculate shape-based fade
+        # Distance from center
         center_x = self.origin_x + self.image.width // 2
         center_y = self.origin_y + self.image.height // 2
         dx = abs(x - center_x)
@@ -121,37 +125,28 @@ class Agent:
         dist = math.sqrt(dx ** 2 + dy ** 2)
         max_dist = math.sqrt((self.image.width / 2) ** 2 + (self.image.height / 2) ** 2)
 
-        # Shape-based fading logic
+        # Shape-based fade
         if self.shape_mode == "circle_fade":
             fade = max(0.15, 1.0 - (dist / max_dist) ** 1.2)
-
         elif self.shape_mode == "soft_square":
             fx = dx / (self.image.width / 2)
             fy = dy / (self.image.height / 2)
             fade = max(0.15, 1.0 - max(fx, fy) ** 1.8)
-
         elif self.shape_mode == "starburst":
-            angle = math.atan2(dy, dx + 1e-5)  # prevent div by 0
-            wave = (math.sin(angle * 5) + 1) / 2  # 5-point burst
+            angle = math.atan2(dy, dx + 1e-5)
+            wave = (math.sin(angle * 5) + 1) / 2
             fade = max(0.15, 1.0 - (dist / max_dist) * wave)
-
         elif self.shape_mode == "organic":
             noise = random.uniform(0.85, 1.0)
             fade = max(0.1, (1.0 - (dist / max_dist)) * noise)
-
         else:
-            fade = 1.0  # fallback
+            fade = 1.0
 
-        # Apply fade to alpha channel
-        patch = patch.copy()
-        r, g, b, a = patch.split()
-        a = a.point(lambda p: int(p * fade))
-        patch.putalpha(a)
+        # Blend patch with soft circular mask
+        mask = self.create_soft_mask(self.patch_size, blur_radius=4, strength=fade)
+        canvas.paste(patch, (x, y), mask)
 
-        # Paste patch
-        canvas.paste(patch, (x, y), patch)
-
-        # Expand in noisy radial directions
+        # Radial growth
         for _ in range(6):
             angle = random.uniform(0, 2 * np.pi)
             radius = random.randint(1, self.patch_size)
@@ -241,6 +236,10 @@ def extract_text_from_handwriting(image_path):
         text_data = json.loads(json_text)
         extracted_text = text_data.get("text", "Unknown")
         detected_language = text_data.get("language", "Unknown")
+        
+        global extracted_data
+        
+        extracted_data['language'] = detected_language
 
         return extracted_text, detected_language
 
@@ -313,44 +312,6 @@ def analyze_emotion(text):
             "confidence": 0.0,
             "language": "Unknown"
         }
-        
-def process_handwritten_image(processed_image):
-    global extracted_data  # Declare global variable
-    
-    extracted_text, detected_language = extract_text_from_handwriting(processed_image)
-
-    if extracted_text:
-        translated_text = translate_to_english(extracted_text) if detected_language.lower() != "english" else extracted_text
-        text_analysis_data = analyze_emotion(translated_text)
-
-        detected_emotion = text_analysis_data["emotion"]
-        confidence_score = text_analysis_data["confidence"]
-
-        # Store data in the global variable
-        extracted_data = {
-            "extracted_text": extracted_text,
-            "language": detected_language,
-            "translated_text": translated_text,
-            "emotion": detected_emotion,
-            "confidence": confidence_score
-        }
-
-        # Print output
-        print("\n Extracted Information Stored:")
-        print(f"Extracted Text: {extracted_data['extracted_text']}")
-        print(f"Detected Language: {extracted_data['language']}")
-        print(f"Translated Text: {extracted_data['translated_text'] if extracted_data['language'].lower() != 'english' else 'N/A'}")
-        print(f"Detected Emotion: {extracted_data['emotion']}")
-        print(f"Confidence Score: {extracted_data['confidence']:.2f}")
-
-    else:
-        print("\n Failed to process the text.")
-
-
-# ## Map Emotion and Incorporate Culture from Language
-
-# In[ ]:
-
 
 # Visual Composition mapping based on detected emotion, grammar system
 COMPOSITION_MAPPING = {
@@ -536,7 +497,7 @@ def generate_image():
     ).images[0]
 
     # Save image
-    image_path = "generated_image.png"
+    image_path = "image/generated_image.png"
     image.save(image_path)
 
     return image_path, prompt
@@ -597,9 +558,14 @@ def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
             update_callback(canvas)  # Push update to GUI
 
         time.sleep(delay)
+    
+    # flatten image before saving
+    background = Image.new("RGBA", canvas.size, (240, 230, 210, 255))
+    flattened = Image.alpha_composite(background, canvas)
+    flattened.save("image/final_collaborative_canvas.png")
 
-    canvas.save("final_collaborative_canvas.png")
-    print("Canvas saved as final_collaborative_canvas.png")
+    # canvas.save("final_collaborative_canvas.png")
+    print("Canvas saved in image folder as final_collaborative_canvas.png")
 
 def automate_from_image_file(image_input, update_callback=None):
     global extracted_data, canvas, agents
