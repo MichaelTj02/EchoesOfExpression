@@ -1,5 +1,7 @@
 .env
 
+.DS_Store
+
 # Compiled bytecode
 __pycache__/
 *.pyc
