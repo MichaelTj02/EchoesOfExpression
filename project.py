@@ -61,7 +61,7 @@ print("API Key Loaded Successfully!")
 print("ChatGPT Response:", response.choices[0].message.content)
 
 
-# ## Drawing Agents (Reactive Systems)
+# Drawing Agents (Reactive Systems)
 class Agent:
     def __init__(self, image, start_x, start_y, patch_size=5):
         self.patch_size = patch_size
@@ -73,7 +73,7 @@ class Agent:
         # Global fading applied once
         self.image = image.convert("RGBA")
         r, g, b, a = self.image.split()
-        a = a.point(lambda p: int(p * 0.65))  # Global fade
+        a = a.point(lambda p: int(p * 0.65))  # Global fade, 65% opacity
         self.image.putalpha(a)
 
         # Start from center
@@ -89,6 +89,9 @@ class Agent:
             "organic"
         ])
 
+        self.last_seen_input = input_counter
+        self.max_rounds = 4  # Track drawing rounds per agent
+
     def create_soft_mask(self, size, blur_radius=5, strength=0.85):
         mask = Image.new("L", (size, size), 0)
         draw = ImageDraw.Draw(mask)
@@ -100,63 +103,65 @@ class Agent:
         if not self.queue:
             return
 
-        x, y = self.queue.popleft()
-        key = (x, y)
-        if key in self.visited:
-            return
+        for _ in range(9):
+            if not self.queue:
+                break
 
-        self.visited.add(key)
+            x, y = self.queue.popleft()
+            key = (x, y)
+            if key in self.visited:
+                continue
+            self.visited.add(key)
 
-        # Crop patch from image
-        local_x = max(0, x - self.origin_x)
-        local_y = max(0, y - self.origin_y)
-        patch = self.image.crop((
-            local_x,
-            local_y,
-            local_x + self.patch_size,
-            local_y + self.patch_size
-        ))
+            local_x = max(0, x - self.origin_x)
+            local_y = max(0, y - self.origin_y)
 
-        # Distance from center
-        center_x = self.origin_x + self.image.width // 2
-        center_y = self.origin_y + self.image.height // 2
-        dx = abs(x - center_x)
-        dy = abs(y - center_y)
-        dist = math.sqrt(dx ** 2 + dy ** 2)
-        max_dist = math.sqrt((self.image.width / 2) ** 2 + (self.image.height / 2) ** 2)
+            if local_x + self.patch_size > self.image.width or local_y + self.patch_size > self.image.height:
+                continue
 
-        # Shape-based fade
-        if self.shape_mode == "circle_fade":
-            fade = max(0.35, 1.0 - (dist / max_dist) ** 1.2)
-        elif self.shape_mode == "soft_square":
-            fx = dx / (self.image.width / 2)
-            fy = dy / (self.image.height / 2)
-            fade = max(0.35, 1.0 - max(fx, fy) ** 1.8)
-        elif self.shape_mode == "starburst":
-            angle = math.atan2(dy, dx + 1e-5)
-            wave = (math.sin(angle * 5) + 1) / 2
-            fade = max(0.35, 1.0 - (dist / max_dist) * wave)
-        elif self.shape_mode == "organic":
-            noise = random.uniform(0.85, 1.0)
-            fade = max(0.1, (1.0 - (dist / max_dist)) * noise)
-        else:
-            fade = 1.0
+            patch = self.image.crop((
+                local_x,
+                local_y,
+                local_x + self.patch_size,
+                local_y + self.patch_size
+            ))
 
-        # Blend patch with soft circular mask
-        mask = self.create_soft_mask(self.patch_size, blur_radius=4, strength=fade)
-        canvas.paste(patch, (x, y), mask)
+            center_x = self.origin_x + self.image.width // 2
+            center_y = self.origin_y + self.image.height // 2
+            dx = abs(x - center_x)
+            dy = abs(y - center_y)
+            dist = math.sqrt(dx ** 2 + dy ** 2)
+            max_dist = math.sqrt((self.image.width / 2) ** 2 + (self.image.height / 2) ** 2)
 
-        # Radial growth
-        for _ in range(6):
-            angle = random.uniform(0, 2 * np.pi)
-            radius = random.randint(1, self.patch_size)
-            nx = x + int(radius * math.cos(angle))
-            ny = y + int(radius * math.sin(angle))
+            if self.shape_mode == "circle_fade":
+                fade = max(0.35, 1.0 - (dist / max_dist) ** 1.2)
+            elif self.shape_mode == "soft_square":
+                fx = dx / (self.image.width / 2)
+                fy = dy / (self.image.height / 2)
+                fade = max(0.35, 1.0 - max(fx, fy) ** 1.8)
+            elif self.shape_mode == "starburst":
+                angle = math.atan2(dy, dx + 1e-5)
+                wave = (math.sin(angle * 5) + 1) / 2
+                fade = max(0.35, 1.0 - (dist / max_dist) * wave)
+            elif self.shape_mode == "organic":
+                noise = random.uniform(0.85, 1.0)
+                fade = max(0.1, (1.0 - (dist / max_dist)) * noise)
+            else:
+                fade = 1.0
 
-            if (nx, ny) not in self.visited:
-                if self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
-                   self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
-                    self.queue.append((nx, ny))
+            mask = self.create_soft_mask(self.patch_size, blur_radius=4, strength=fade)
+            canvas.paste(patch, (x, y), mask)
+
+            for _ in range(6):
+                angle = random.uniform(0, 2 * math.pi)
+                radius = random.randint(1, self.patch_size)
+                nx = x + int(radius * math.cos(angle))
+                ny = y + int(radius * math.sin(angle))
+
+                if (nx, ny) not in self.visited:
+                    if self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
+                    self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
+                        self.queue.append((nx, ny))
 
 # Globals
 CANVAS_WIDTH = 1920
@@ -165,6 +170,7 @@ canvas = Image.new("RGBA", (CANVAS_WIDTH, CANVAS_HEIGHT), (240, 230, 210, 255))
 agents = []
 extracted_data = {}
 used_regions = []  # to track agent locations
+input_counter = 0
 
 # ## Process Handwritten Text (OCR, Translation, and Emotion Extraction)
 
@@ -551,26 +557,28 @@ def add_agent_for_image(image_path):
 
     print("Could not place agent without overlap.")
 
-def show_live_canvas(canvas):
-    return True  # placeholder, no-op now
+def run_live_drawing_loop(steps=3000, delay=0.01, update_callback=None):
+    global agents, input_counter
 
-def run_live_drawing_loop(steps=5000, delay=0.01, update_callback=None):
+    input_counter += 1
     for step in range(steps):
+        active_agents = []
         for agent in agents:
-            for _ in range(8):  # range increase drawing space
+            if input_counter - agent.last_seen_input <= agent.max_rounds:
                 agent.update(canvas)
+                active_agents.append(agent)
+        agents = active_agents
 
         if update_callback and step % 5 == 0:
-            update_callback(canvas)  # Push update to GUI
+            update_callback(canvas)
 
-        # time.sleep(delay)
-    
     # flatten image before saving
     background = Image.new("RGBA", canvas.size, (240, 230, 210, 255))
     flattened = Image.alpha_composite(background, canvas)
     flattened.save("image/final_collaborative_canvas.png")
 
     print("Canvas saved in image folder as final_collaborative_canvas.png")
+
 
 def automate_from_image_file(image_input, update_callback=None):
     global extracted_data, canvas, agents
