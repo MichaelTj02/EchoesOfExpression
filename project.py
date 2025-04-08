@@ -103,7 +103,7 @@ class Agent:
         if not self.queue:
             return
 
-        for _ in range(9):
+        for _ in range(12):
             if not self.queue:
                 break
 
@@ -557,7 +557,7 @@ def add_agent_for_image(image_path):
 
     print("Could not place agent without overlap.")
 
-def run_live_drawing_loop(steps=3000, delay=0.01, update_callback=None):
+def run_live_drawing_loop(steps=4000, delay=0.01, update_callback=None):
     global agents, input_counter
 
     input_counter += 1
