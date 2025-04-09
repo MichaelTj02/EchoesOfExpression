@@ -485,7 +485,7 @@ def build_dynamic_prompt():
         f"A high-resolution digital painting of a symbolic {culture} scene or object, "
         f"inspired by traditional {art_form}, "
         f"featuring {motif}, layered with {script}, "
-        f"with a strong {composition_style} composition. "
+        f"with a strong {composition_style} image composition. "
         f"Rendered in cinematic lighting, textured brushwork, Van Gogh style, and borderless."
     )
 
