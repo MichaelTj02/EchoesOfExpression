@@ -103,7 +103,7 @@ class Agent:
         if not self.queue:
             return
 
-        for _ in range(12):
+        for _ in range(14): # range to control speed of drawing, more = faster and more drawn
             if not self.queue:
                 break
 
@@ -297,13 +297,15 @@ def analyze_emotion(text):
         else:
             raise ValueError("Invalid JSON format received from GPT.")
 
-        # Parse JSON safely
+        # Parse JSON
         text_analysis_data = json.loads(json_text)
 
         # Extract emotion, confidence, and language
         detected_emotion = text_analysis_data.get("emotion", "Unknown")
         confidence_score = text_analysis_data.get("confidence", 0.0)
         detected_language = text_analysis_data.get("language", "Unknown")
+        
+        extracted_data['emotion'] = detected_emotion
 
         return {
             "emotion": detected_emotion,
@@ -483,7 +485,7 @@ def build_dynamic_prompt():
         f"A high-resolution digital painting of a symbolic {culture} scene or object, "
         f"inspired by traditional {art_form}, "
         f"featuring {motif}, layered with {script}, "
-        f"with a {composition_style} composition. "
+        f"with a strong {composition_style} composition. "
         f"Rendered in cinematic lighting, textured brushwork, Van Gogh style, and borderless."
     )
 
@@ -514,7 +516,7 @@ def generate_image():
 
     return image_path, prompt
 
-def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.4):
+def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.5):
     # Calculate intersection box
     x1 = max(box1[0], box2[0])
     y1 = max(box1[1], box2[1])
