@@ -51,7 +51,7 @@ client = openai.OpenAI(api_key=openai.api_key)
 # In[13]:
 
 
-# Test API call with the updated function
+# Test API call with the updated function (client.chat.completions.create())
 response = client.chat.completions.create(
     model="gpt-4-turbo",
     messages=[{"role": "user", "content": "Hello from Jupyter Notebook!"}]
@@ -61,9 +61,31 @@ print("API Key Loaded Successfully!")
 print("ChatGPT Response:", response.choices[0].message.content)
 
 
+# Map emotion to agent's drawing shape
+EMOTION_TO_SHAPE = {
+    "Happiness": "radiant_circle",
+    "Sadness": "teardrop",
+    "Anger": "jagged_burst",
+    "Fear": "tight_web",
+    "Surprise": "spiral_form",
+    "Disgust": "melting_droop",
+    "Unknown": "organic_cloud"
+}
+
+# Drawing logic for shape_mode
+SHAPE_PATTERNS = {
+    "radiant_circle": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - (dist / max_dist) ** 1.5),
+    "teardrop": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - (dy / max_dist) ** 1.8 * (1.0 - abs(dx) / max_dist)),
+    "jagged_burst": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - abs(math.sin(dx * 0.5) + math.cos(dy * 0.5)) * (dist / max_dist)),
+    "tight_web": lambda dx, dy, dist, max_dist: max(0.2, (1.0 - (dist / max_dist)) * abs(math.cos(dist * 0.2))),
+    "spiral_form": lambda dx, dy, dist, max_dist: max(0.2, (1.0 - (dist / max_dist)) * (0.5 + math.sin(dist * 0.1 + math.atan2(dy, dx + 1e-5) * 4) * 0.5)),
+    "melting_droop": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - (dy / max_dist) * random.uniform(0.7, 1.2)),
+    "organic_cloud": lambda dx, dy, dist, max_dist: max(0.1, (1.0 - (dist / max_dist) ** random.uniform(0.8, 1.5)) * random.uniform(0.7, 1.2))
+}
+
 # Drawing Agents (Reactive Systems)
 class Agent:
-    def __init__(self, image, start_x, start_y, patch_size=5):
+    def __init__(self, image, start_x, start_y, emotion="Unknown", patch_size=5):
         self.patch_size = patch_size
         self.origin_x = start_x
         self.origin_y = start_y
@@ -82,12 +104,7 @@ class Agent:
         self.queue.append((center_x, center_y))
 
         # Drawing style
-        self.shape_mode = random.choice([
-            "circle_fade", 
-            "soft_square", 
-            "starburst", 
-            "organic"
-        ])
+        self.shape_mode = EMOTION_TO_SHAPE.get(emotion, "organic_cloud")
 
         self.last_seen_input = input_counter
         self.max_rounds = 4  # Track drawing rounds per agent
@@ -133,21 +150,7 @@ class Agent:
             dist = math.sqrt(dx ** 2 + dy ** 2)
             max_dist = math.sqrt((self.image.width / 2) ** 2 + (self.image.height / 2) ** 2)
 
-            if self.shape_mode == "circle_fade":
-                fade = max(0.35, 1.0 - (dist / max_dist) ** 1.2)
-            elif self.shape_mode == "soft_square":
-                fx = dx / (self.image.width / 2)
-                fy = dy / (self.image.height / 2)
-                fade = max(0.35, 1.0 - max(fx, fy) ** 1.8)
-            elif self.shape_mode == "starburst":
-                angle = math.atan2(dy, dx + 1e-5)
-                wave = (math.sin(angle * 5) + 1) / 2
-                fade = max(0.35, 1.0 - (dist / max_dist) * wave)
-            elif self.shape_mode == "organic":
-                noise = random.uniform(0.85, 1.0)
-                fade = max(0.1, (1.0 - (dist / max_dist)) * noise)
-            else:
-                fade = 1.0
+            fade = SHAPE_PATTERNS.get(self.shape_mode, SHAPE_PATTERNS["organic_cloud"])(dx, dy, dist, max_dist)
 
             mask = self.create_soft_mask(self.patch_size, blur_radius=4, strength=fade)
             canvas.paste(patch, (x, y), mask)
@@ -533,7 +536,7 @@ def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.5):
 
     return overlap_ratio > max_overlap_ratio
 
-def add_agent_for_image(image_path):
+def add_agent_for_image(image_path, emotion="Unknown"):
     global agents, canvas, used_regions
 
     image = Image.open(image_path).convert("RGBA")
@@ -542,18 +545,18 @@ def add_agent_for_image(image_path):
     new_height = int(image.height * resize_ratio)
     image = image.resize((new_width, new_height), Image.LANCZOS)
 
-    max_attempts = 350
+    max_attempts = 500
     for _ in range(max_attempts):
         x = random.randint(0, canvas.width - new_width)
         y = random.randint(0, canvas.height - new_height)
 
         # Check overlap with other agents
         new_box = (x, y, x + new_width, y + new_height)
-        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.2) for region in used_regions)
+        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.45) for region in used_regions)
 
         if not overlap:
             used_regions.append(new_box)
-            new_agent = Agent(image, x, y)
+            new_agent = Agent(image, x, y, emotion=emotion)
             agents.append(new_agent)
             return
 
@@ -620,7 +623,7 @@ def automate_from_image_file(image_input, update_callback=None):
     # Generate and draw
     generated_image_path, prompt = generate_image()
  
-    add_agent_for_image(generated_image_path)
+    add_agent_for_image(generated_image_path, emotion=extracted_data['emotion'])
     run_live_drawing_loop(update_callback=update_callback)
 
     summary = (
