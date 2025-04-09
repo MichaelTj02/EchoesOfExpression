@@ -57,7 +57,7 @@ class CulturalAIGUI:
     def update_canvas_preview(self, canvas):
         # Save canvas temporarily
         canvas.save("image/latest_canvas_preview.png")
-        time.sleep(0.05)  # Ensure file is written
+        time.sleep(0.05)  # Ensure file is written before loading
 
         # Open and fully load the canvas image
         with open("image/latest_canvas_preview.png", "rb") as f:
