@@ -542,7 +542,7 @@ def add_agent_for_image(image_path):
     new_height = int(image.height * resize_ratio)
     image = image.resize((new_width, new_height), Image.LANCZOS)
 
-    max_attempts = 300
+    max_attempts = 350
     for _ in range(max_attempts):
         x = random.randint(0, canvas.width - new_width)
         y = random.randint(0, canvas.height - new_height)
