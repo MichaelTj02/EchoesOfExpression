@@ -74,13 +74,29 @@ EMOTION_TO_SHAPE = {
 
 # Drawing logic for shape_mode
 SHAPE_PATTERNS = {
-    "radiant_circle": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - (dist / max_dist) ** 1.5),
-    "teardrop": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - (dy / max_dist) ** 1.8 * (1.0 - abs(dx) / max_dist)),
-    "jagged_burst": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - abs(math.sin(dx * 0.5) + math.cos(dy * 0.5)) * (dist / max_dist)),
-    "tight_web": lambda dx, dy, dist, max_dist: max(0.2, (1.0 - (dist / max_dist)) * abs(math.cos(dist * 0.2))),
-    "spiral_form": lambda dx, dy, dist, max_dist: max(0.2, (1.0 - (dist / max_dist)) * (0.5 + math.sin(dist * 0.1 + math.atan2(dy, dx + 1e-5) * 4) * 0.5)),
-    "melting_droop": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - (dy / max_dist) * random.uniform(0.7, 1.2)),
-    "organic_cloud": lambda dx, dy, dist, max_dist: max(0.1, (1.0 - (dist / max_dist) ** random.uniform(0.8, 1.5)) * random.uniform(0.7, 1.2))
+    "radiant_circle": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - abs(dist / max_dist) ** 1.5),
+    "teardrop": lambda dx, dy, dist, max_dist: max(
+        0.2, 1.0 - abs(dy / max_dist) ** 1.8 * (1.0 - abs(dx) / max_dist)
+    ),
+    "jagged_burst": lambda dx, dy, dist, max_dist: max(
+        0.2, 1.0 - abs(math.sin(abs(dx) * 0.5) + math.cos(abs(dy) * 0.5)) * abs(dist / max_dist)
+    ),
+    "tight_web": lambda dx, dy, dist, max_dist: max(
+        0.2, (1.0 - abs(dist / max_dist)) * abs(math.cos(abs(dist) * 0.2))
+    ),
+    "spiral_form": lambda dx, dy, dist, max_dist: max(
+        0.2,
+        (1.0 - abs(dist / max_dist)) *
+        (0.5 + math.sin(abs(dist) * 0.1 + math.atan2(dy, dx + 1e-5) * 4) * 0.5)
+    ),
+    "melting_droop": lambda dx, dy, dist, max_dist: max(
+        0.2, 1.0 - abs(dy / max_dist) * random.uniform(0.7, 1.2)
+    ),
+    "organic_cloud": lambda dx, dy, dist, max_dist: max(
+        0.1,
+        (1.0 - abs(dist / max_dist) ** random.uniform(0.8, 1.5)) *
+        random.uniform(0.7, 1.2)
+    )
 }
 
 # Drawing Agents (Reactive Systems)
@@ -145,13 +161,19 @@ class Agent:
 
             center_x = self.origin_x + self.image.width // 2
             center_y = self.origin_y + self.image.height // 2
-            dx = abs(x - center_x)
-            dy = abs(y - center_y)
+            dx = x - center_x
+            dy = y - center_y
             dist = math.sqrt(dx ** 2 + dy ** 2)
             max_dist = math.sqrt((self.image.width / 2) ** 2 + (self.image.height / 2) ** 2)
 
-            fade = SHAPE_PATTERNS.get(self.shape_mode, SHAPE_PATTERNS["organic_cloud"])(dx, dy, dist, max_dist)
+            # Avoid any complex result in fade formulas
+            try:
+                fade = SHAPE_PATTERNS.get(self.shape_mode, SHAPE_PATTERNS["organic_cloud"])(dx, dy, dist, max_dist)
+            except Exception as e:
+                print(f"[Agent] Fade computation failed for shape '{self.shape_mode}': {e}")
+                fade = 1.0
 
+            fade = SHAPE_PATTERNS.get(self.shape_mode, SHAPE_PATTERNS["organic_cloud"])(dx, dy, dist, max_dist)
             mask = self.create_soft_mask(self.patch_size, blur_radius=4, strength=fade)
             canvas.paste(patch, (x, y), mask)
 
@@ -161,10 +183,10 @@ class Agent:
                 nx = x + int(radius * math.cos(angle))
                 ny = y + int(radius * math.sin(angle))
 
-                if (nx, ny) not in self.visited:
-                    if self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
-                    self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
-                        self.queue.append((nx, ny))
+                if (nx, ny) not in self.visited and \
+                   self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
+                   self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
+                    self.queue.append((nx, ny))
 
 # Globals
 CANVAS_WIDTH = 1920
@@ -519,7 +541,7 @@ def generate_image():
 
     return image_path, prompt
 
-def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.5):
+def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.4):
     # Calculate intersection box
     x1 = max(box1[0], box2[0])
     y1 = max(box1[1], box2[1])
@@ -552,7 +574,7 @@ def add_agent_for_image(image_path, emotion="Unknown"):
 
         # Check overlap with other agents
         new_box = (x, y, x + new_width, y + new_height)
-        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.45) for region in used_regions)
+        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.4) for region in used_regions)
 
         if not overlap:
             used_regions.append(new_box)
