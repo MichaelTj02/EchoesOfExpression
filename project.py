@@ -103,7 +103,7 @@ class Agent:
         if not self.queue:
             return
 
-        for _ in range(14): # range to control speed of drawing, more = faster and more drawn
+        for _ in range(10): # range to control speed of drawing, more = faster and more drawn
             if not self.queue:
                 break
 
@@ -542,7 +542,7 @@ def add_agent_for_image(image_path):
     new_height = int(image.height * resize_ratio)
     image = image.resize((new_width, new_height), Image.LANCZOS)
 
-    max_attempts = 150
+    max_attempts = 300
     for _ in range(max_attempts):
         x = random.randint(0, canvas.width - new_width)
         y = random.randint(0, canvas.height - new_height)
@@ -559,8 +559,11 @@ def add_agent_for_image(image_path):
 
     print("Could not place agent without overlap.")
 
-def run_live_drawing_loop(steps=4000, delay=0.01, update_callback=None):
+def run_live_drawing_loop(steps=None, delay=0.01, update_callback=None):
     global agents, input_counter
+    
+    if steps is None: # randomize amount of steps for each agent
+        steps = random.randint(3000, 4500)
 
     input_counter += 1
     for step in range(steps):
