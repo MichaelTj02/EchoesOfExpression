@@ -124,6 +124,8 @@ class Agent:
 
         self.last_seen_input = input_counter
         self.max_rounds = 4  # Track drawing rounds per agent
+        
+        self.draw_step = 0  # internal draw step tracker for shape dynamics
 
     def create_soft_mask(self, size, blur_radius=5, strength=0.85):
         mask = Image.new("L", (size, size), 0)
@@ -178,15 +180,37 @@ class Agent:
             canvas.paste(patch, (x, y), mask)
 
             for _ in range(6):
-                angle = random.uniform(0, 2 * math.pi)
-                radius = random.randint(1, self.patch_size)
-                nx = x + int(radius * math.cos(angle))
-                ny = y + int(radius * math.sin(angle))
+                if self.shape_mode == "spiral_form":
+                    angle_offset = self.draw_step / 20  # spiral effect over time
+                    angle = math.atan2(y - center_y, x - center_x) + angle_offset
+                    radius = self.patch_size
+                    nx = x + int(radius * math.cos(angle))
+                    ny = y + int(radius * math.sin(angle))
 
-                if (nx, ny) not in self.visited and \
-                   self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
-                   self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
-                    self.queue.append((nx, ny))
+                elif self.shape_mode == "teardrop":
+                    nx = x + random.randint(-1, 1)
+                    ny = y + random.randint(0, self.patch_size)
+
+                elif self.shape_mode == "jagged_burst":
+                    angle = random.uniform(0, 2 * math.pi)
+                    radius = random.randint(self.patch_size, self.patch_size * 2)
+                    noise = random.uniform(-4, 4)
+                    nx = x + int((radius + noise) * math.cos(angle))
+                    ny = y + int((radius + noise) * math.sin(angle))
+
+                else:
+                    angle = random.uniform(0, 2 * math.pi)
+                    radius = random.randint(1, self.patch_size)
+                    nx = x + int(radius * math.cos(angle))
+                    ny = y + int(radius * math.sin(angle))
+
+                if (nx, ny) not in self.visited:
+                    if self.origin_x <= nx < self.origin_x + self.image.width - self.patch_size and \
+                    self.origin_y <= ny < self.origin_y + self.image.height - self.patch_size:
+                        self.queue.append((nx, ny))
+
+            # increment spiral rotation step
+            self.draw_step += 1
 
 # Globals
 CANVAS_WIDTH = 1920
