@@ -565,7 +565,7 @@ def generate_image():
 
     return image_path, prompt
 
-def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.35):
+def intersect_with_tolerance(box1, box2, max_overlap_ratio=0.3):
     # Calculate intersection box
     x1 = max(box1[0], box2[0])
     y1 = max(box1[1], box2[1])
@@ -598,7 +598,7 @@ def add_agent_for_image(image_path, emotion="Unknown"):
 
         # Check overlap with other agents
         new_box = (x, y, x + new_width, y + new_height)
-        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.35) for region in used_regions)
+        overlap = any(intersect_with_tolerance(new_box, region, max_overlap_ratio=0.3) for region in used_regions)
 
         if not overlap:
             used_regions.append(new_box)
