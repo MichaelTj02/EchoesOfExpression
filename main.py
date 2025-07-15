@@ -6,7 +6,7 @@ import time
 
 from project import automate_from_image_file, canvas, CANVAS_WIDTH, CANVAS_HEIGHT
 
-class CulturalAIGUI:
+class CulturalAI:
     def __init__(self, root):
         self.root = root
         self.root.title("🖌️ Echoes of Expression")
@@ -87,5 +87,5 @@ class CulturalAIGUI:
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = CulturalAIGUI(root)
+    app = CulturalAI(root)
     root.mainloop()
