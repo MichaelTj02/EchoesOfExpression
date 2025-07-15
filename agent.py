@@ -3,7 +3,43 @@ import random
 from collections import deque
 from PIL import Image, ImageDraw, ImageFilter
 
-from project import EMOTION_TO_SHAPE, SHAPE_PATTERNS
+# Map emotion to agent's drawing shape
+EMOTION_TO_SHAPE = {
+    "Happiness": "radiant_circle",
+    "Sadness": "teardrop",
+    "Anger": "jagged_burst",
+    "Fear": "tight_web",
+    "Surprise": "spiral_form",
+    "Disgust": "melting_droop",
+    "Unknown": "organic_cloud"
+}
+
+# Drawing logic for shape_mode
+SHAPE_PATTERNS = {
+    "radiant_circle": lambda dx, dy, dist, max_dist: max(0.2, 1.0 - abs(dist / max_dist) ** 1.5),
+    "teardrop": lambda dx, dy, dist, max_dist: max(
+        0.2, 1.0 - abs(dy / max_dist) ** 1.8 * (1.0 - abs(dx) / max_dist)
+    ),
+    "jagged_burst": lambda dx, dy, dist, max_dist: max(
+        0.2, 1.0 - abs(math.sin(abs(dx) * 0.5) + math.cos(abs(dy) * 0.5)) * abs(dist / max_dist)
+    ),
+    "tight_web": lambda dx, dy, dist, max_dist: max(
+        0.2, (1.0 - abs(dist / max_dist)) * abs(math.cos(abs(dist) * 0.2))
+    ),
+    "spiral_form": lambda dx, dy, dist, max_dist: max(
+        0.2,
+        (1.0 - abs(dist / max_dist)) *
+        (0.5 + math.sin(abs(dist) * 0.1 + math.atan2(dy, dx + 1e-5) * 4) * 0.5)
+    ),
+    "melting_droop": lambda dx, dy, dist, max_dist: max(
+        0.2, 1.0 - abs(dy / max_dist) * random.uniform(0.7, 1.2)
+    ),
+    "organic_cloud": lambda dx, dy, dist, max_dist: max(
+        0.1,
+        (1.0 - abs(dist / max_dist) ** random.uniform(0.8, 1.5)) *
+        random.uniform(0.7, 1.2)
+    )
+}
 
 
 class Agent:
