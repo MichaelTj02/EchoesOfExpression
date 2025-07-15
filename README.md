@@ -20,7 +20,7 @@ cd [project-folder]
 ```bash
 python main.py
 ```
-- When prompted, enter your OpenAI API Key
+- When prompted, enter your OpenAI API Key in the terminal
 
 ### 3. Upload a Handwriting Image
 - Click the **"Upload Handwriting Image"** button in the UI.
