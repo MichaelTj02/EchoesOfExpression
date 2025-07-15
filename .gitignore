@@ -1,6 +1,6 @@
 .env
-baseJupyterNotebook/
 .DS_Store
+baseJupyterNotebook/
 
 # Compiled bytecode
 __pycache__/
