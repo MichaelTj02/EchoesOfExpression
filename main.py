@@ -4,10 +4,7 @@ from PIL import Image, ImageTk, ImageOps
 import threading
 import time
 
-# Import from project.py
 from project import automate_from_image_file, canvas, CANVAS_WIDTH, CANVAS_HEIGHT
-
-# ----------- GUI Setup -----------
 
 class CulturalAIGUI:
     def __init__(self, root):
@@ -87,9 +84,6 @@ class CulturalAIGUI:
             self.output_text.insert(tk.END, f"\nError: {e}\n")
             self.output_text.see(tk.END)
             messagebox.showerror("Processing Error", str(e))
-
-
-# ----------- Run App -----------
 
 if __name__ == "__main__":
     root = tk.Tk()

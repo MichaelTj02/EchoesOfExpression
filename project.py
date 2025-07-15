@@ -28,10 +28,6 @@ import time # For live drawing
 from collections import deque
 import cv2
 
-
-# In[11]:
-
-
 load_dotenv() # load .env file to get API KEY
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -40,18 +36,8 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 if not openai.api_key:
     raise ValueError("API Key not found.")
 
-
-# In[12]:
-
-
-# Create client 
 client = openai.OpenAI(api_key=openai.api_key)
 
-
-# In[13]:
-
-
-# Test API call with the updated function (client.chat.completions.create())
 response = client.chat.completions.create(
     model="gpt-4-turbo",
     messages=[{"role": "user", "content": "Hello from Jupyter Notebook!"}]
@@ -59,7 +45,6 @@ response = client.chat.completions.create(
 
 print("API Key Loaded Successfully!")
 print("ChatGPT Response:", response.choices[0].message.content)
-
 
 # Map emotion to agent's drawing shape
 EMOTION_TO_SHAPE = {
@@ -222,11 +207,6 @@ used_regions = []  # to track agent locations
 input_counter = 0
 
 # ## Process Handwritten Text (OCR, Translation, and Emotion Extraction)
-
-# In[19]:
-
-
-# Text Processing methods
 
 # Preprocess handwriting image to make it more legible
 def preprocess_handwriting(image_path):
@@ -486,12 +466,7 @@ def fetch_cultural_prompt_info():
         }
 
 
-# ## Stable Diffusion and Canvas for Drawing Space
-
-# In[54]:
-
-
-# Stable Diffusion 2.1
+# ## Stable Diffusion 2.1 and Canvas for Drawing Space
 MODEL_ID = "stabilityai/stable-diffusion-2-1"
 
 pipeline = StableDiffusionPipeline.from_pretrained(
@@ -515,9 +490,6 @@ pipeline.safety_checker = None
 # Optimizations
 pipeline.enable_attention_slicing()
 pipeline.enable_vae_slicing()
-
-
-# In[181]:
 
 def build_dynamic_prompt():
     global extracted_data

@@ -18,7 +18,7 @@ cd [project-folder]
 
 ### 2. Run the GUI Application
 ```bash
-python gui_app.py
+python main.py
 ```
 
 ### 3. Upload a Handwriting Image
