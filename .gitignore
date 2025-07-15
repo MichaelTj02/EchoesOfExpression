@@ -1,5 +1,5 @@
 .env
-
+baseJupyterNotebook/
 .DS_Store
 
 # Compiled bytecode
