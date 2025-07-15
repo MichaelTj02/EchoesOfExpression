@@ -1,13 +1,3 @@
-# For API keys
-from dotenv import load_dotenv
-import os
-
-# Open AI GPT-4
-import openai
-
-# For agent
-import math
-
 # Handwriting OCR
 import cv2
 import numpy as np
@@ -22,30 +12,22 @@ import torch
 from diffusers import StableDiffusionPipeline
 
 # For canvas and drawing
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image
 import random
-import time # For live drawing
 import cv2
 
+# Reactive Agent class (drawing)
 from agent import Agent
 
-load_dotenv() # load .env file to get API KEY
+# OpenAI Agent
+from openAIAgent import OpenAIAgent
 
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-# Check if API key is loaded
-if not openai.api_key:
-    raise ValueError("API Key not found.")
-
-client = openai.OpenAI(api_key=openai.api_key)
-
-response = client.chat.completions.create(
-    model="gpt-4-turbo",
-    messages=[{"role": "user", "content": "Hello from Jupyter Notebook!"}]
-)
-
+# Initialize and test OpenAI API
+openai_agent = OpenAIAgent()
+client = openai_agent.client
+test_message = openai_agent.test_api
 print("API Key Loaded Successfully!")
-print("ChatGPT Response:", response.choices[0].message.content)
+print("ChatGPT Response:", test_message)
 
 # Globals
 CANVAS_WIDTH = 1920
@@ -56,7 +38,6 @@ extracted_data = {}
 used_regions = []  # to track agent locations
 input_counter = 0
 
-# ## Process Handwritten Text (OCR, Translation, and Emotion Extraction)
 
 # Preprocess handwriting image to make it more legible
 def preprocess_handwriting(image_path):

@@ -16,10 +16,11 @@ This system transforms handwritten text into AI-generated artwork using emotion 
 cd [project-folder]
 ```
 
-### 2. Run the GUI Application
+### 2. Run the GUI Application & Enter OpenAI API Key
 ```bash
 python main.py
 ```
+- When prompted, enter your OpenAI API Key
 
 ### 3. Upload a Handwriting Image
 - Click the **"Upload Handwriting Image"** button in the UI.
