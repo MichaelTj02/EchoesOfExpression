@@ -16,3 +16,5 @@ __pycache__/
 final_collaborative_canvas.png
 generated_image.png
 latest_canvas_preview.png
+# Test cache
+.pytest_cache/

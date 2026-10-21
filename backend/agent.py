@@ -1,7 +1,10 @@
+import logging
 import math
 import random
 from collections import deque
 from PIL import Image, ImageDraw, ImageFilter
+
+logger = logging.getLogger(__name__)
 
 # Map emotion to agent's drawing shape
 EMOTION_TO_SHAPE = {
@@ -121,12 +124,9 @@ class Agent:
                     dx, dy, dist, max_dist
                 )
             except Exception as e:
-                print(f"[Agent] Fade computation failed for shape '{self.shape_mode}': {e}")
+                logger.warning("Fade computation failed for shape '%s': %s", self.shape_mode, e)
                 fade = 1.0
 
-            fade = SHAPE_PATTERNS.get(self.shape_mode, SHAPE_PATTERNS["organic_cloud"])(
-                dx, dy, dist, max_dist
-            )
             mask = self.create_soft_mask(self.patch_size, blur_radius=4, strength=fade)
             canvas.paste(patch, (x, y), mask)
 

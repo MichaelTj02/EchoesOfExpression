@@ -4,43 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Echoes of Expression (IAT460 course project): a Tkinter app that turns a photo of handwriting into AI-generated art. GPT-4o reads the handwriting and infers language/emotion/culture, Stable Diffusion 2.1 renders an image from that, and a reactive "agent" gradually paints the image onto a shared 1920x1080 canvas that accumulates across uploads.
+Echoes of Expression (IAT460 course project): turns a photo of handwriting into AI-generated art. GPT-4o reads the handwriting and infers language/emotion/culture, Stable Diffusion 2.1 renders an image from that, and a reactive "agent" gradually paints the image onto a shared 1920x1080 canvas that accumulates across uploads.
 
-## Running
+## Commands
 
 ```bash
 pip install -r requirements.txt
-mkdir image      
-python main.py
+python main.py                                            # Tkinter GUI
+python -m backend handwritingImages/handwriting1.png      # headless run, optional --steps N
+python -m pytest                                          # all tests (no GPU / network / API key needed)
+python -m pytest tests/test_engine.py::test_process_english         # single test
 ```
 
-- OpenAI key: put `OPENAI_API_KEY=...` in a `.env` at the repo root. If no `.env` file is found, `OpenAIAgent` falls back to `input()` on the terminal (the GUI does not prompt).
-- First run downloads `stabilityai/stable-diffusion-2-1` (fp16) via `diffusers`. Needs a GPU with ~6GB+ VRAM; device is chosen CUDA → MPS → CPU.
+- OpenAI key: `OPENAI_API_KEY=...` in a `.env` at the repo root. If missing, the GUI asks via a dialog; the CLI exits with an error.
+- First run downloads `stabilityai/stable-diffusion-2-1` (fp16). Needs a GPU with ~6GB+ VRAM; device is chosen CUDA → MPS → CPU.
+- Outputs go to `image/` (created automatically): `generated_image.png`, `final_collaborative_canvas.png`.
 - Sample inputs live in `handwritingImages/`; reference outputs in `sampleOutput/`.
-- There are no tests, linter, or build step.
 
 ## Architecture
 
-Four modules, flat layout:
+Backend (`backend/`) and frontend (`gui/`) are separated; the GUI only talks to `backend.EchoesEngine`.
 
-- `main.py` — Tkinter GUI (`CulturalAI`). The upload button spawns a daemon thread that calls `project.automate_from_image_file(path, update_callback=...)`. The callback receives the canvas, writes it to `image/latest_canvas_preview.png`, reloads it, and updates the preview label.
-- `project.py` — the whole pipeline plus all shared state. `automate_from_image_file` runs, in order: GPT-4o OCR + language detection → translate to English (if needed) → emotion classification → `COMPOSITION_MAPPING` lookup → cultural visual goal / cultural prompt info (more GPT-4o calls) → `build_dynamic_prompt` → SD image (random size from `size_options`, saved to `image/generated_image.png`) → `add_agent_for_image` → `run_live_drawing_loop`. Returns `(summary_text, canvas)`.
-- `agent.py` — `Agent` paints its source image onto the canvas patch-by-patch via a BFS-style queue starting at the image center. The detected emotion picks a `shape_mode` (`EMOTION_TO_SHAPE`), which controls both the per-patch opacity falloff (`SHAPE_PATTERNS`) and how neighbor points are queued.
-- `openAIAgent.py` — loads the API key and builds the `openai.OpenAI` client used by `project.py`.
+- `backend/engine.py`: `EchoesEngine` orchestrates everything. `load()` creates the OpenAI client, checks the connection, and loads SD. `process(image, on_progress, on_frame, draw_steps)` runs the stages (`STAGES`: ocr → translate (non-English only) → emotion → culture → generate → draw → done) and returns a `PipelineResult` dataclass. A lock serializes `process` calls because the canvas and output files are shared. Client, image generator and canvas are constructor-injectable (tests use fakes).
+- `backend/llm.py`: stateless GPT-4o stage functions taking `client` plus inputs; all JSON replies go through `parse_json`. If OCR returns language `Unknown`, the engine falls back to the language from `analyze_emotion`.
+- `backend/prompting.py`: `COMPOSITION_MAPPING` and `build_prompt` (pure).
+- `backend/image_gen.py`: `ImageGenerator` wraps the SD pipeline.
+- `backend/canvas.py`: `CollaborativeCanvas` owns the canvas image, agents, placed regions and the upload counter. `run()` drives agents and emits `on_frame(flattened copy)` every `FRAME_EVERY` steps, sleeping `frame_delay` after each frame. That delay is what paces the visible animation.
+- `backend/agent.py`: `Agent` paints its source image patch-by-patch from the center outward. Emotion picks a `shape_mode` that controls opacity falloff and neighbor spreading.
+- `backend/config.py`: all tunables (canvas size, SD settings, placement/overlap limits, draw steps, frame pacing, model ids, output paths).
+- `gui/app.py`: `CulturalAI`. Worker threads never touch Tk; they post events to a `queue.Queue` and write the newest frame to a single slot, and `_poll` (via `root.after`) applies them on the main thread. The upload button is disabled while loading or processing.
 
-Emotion is the main control signal and is keyed by the same label set in three places: the prompt in `analyze_emotion`, `COMPOSITION_MAPPING` (`project.py`), and `EMOTION_TO_SHAPE` (`agent.py`). Adding/renaming an emotion means updating all three.
+### Invariants
 
-### Shared state and lifecycle (important for refactoring)
-
-- **Importing `project.py` has heavy side effects**: it constructs `OpenAIAgent` (may block on `input()`), and loads the SD pipeline onto the GPU at module level. Anything that imports `project` pays this cost.
-- Pipeline state is module-level globals in `project.py`: `canvas`, `agents`, `used_regions`, `input_counter`, `extracted_data`. Several stage functions communicate by reading/writing `extracted_data` rather than via arguments/returns (e.g. `assign_composition_style`, `get_visual_goal`, `fetch_cultural_prompt_info` read `extracted_data["language"/"emotion"]`). Stage order therefore matters.
-- The canvas is persistent across uploads (the "collaborative" part). Each call to `run_live_drawing_loop` increments `input_counter`; an agent keeps drawing for `max_rounds` (4) subsequent uploads, then is dropped. `used_regions` is never cleared, so placement gets harder over time (`add_agent_for_image` gives up after 500 attempts).
-- `main.py` imports `canvas`, `CANVAS_WIDTH`, `CANVAS_HEIGHT` from `project` directly, and its callback mutates Tkinter widgets from the worker thread.
-- Files written to the working directory / `image/`: `generated_image.png`, `latest_canvas_preview.png`, `final_collaborative_canvas.png`, and `uploaded_image.jpg` (when a PIL image rather than a path is passed). Only one upload should be processed at a time — concurrent runs share all of the above.
-
-### Known quirks
-
-- `openai_agent.test_api` in `project.py` is referenced without calling it, so the startup "ChatGPT Response" print shows a bound method, not an API response.
-- `preprocess_handwriting` (OpenCV binarization) is defined but not used in the pipeline.
-- `Agent.update` computes `fade` twice; the second, unguarded computation is the one that takes effect.
-- The README notes "Language not detected" appearing in the terminal as a known, unresolved issue.
+- Imports must stay cheap: `torch`/`diffusers` are imported inside `ImageGenerator.load`, and `openai`/`dotenv` inside `llm.make_client`. `tests/test_imports.py` enforces this.
+- Emotion labels must match across the `analyze_emotion` prompt (`llm.py`), `COMPOSITION_MAPPING` (`prompting.py`) and `EMOTION_TO_SHAPE` (`agent.py`).
+- The canvas persists across uploads: each `run()` increments `input_counter`, and an agent keeps drawing for `max_rounds` (4) later runs before it is dropped. `used_regions` is never cleared, so `add_agent` can fail (returns `False`) once the canvas fills up.
+- Presentation (e.g. `format_summary`) lives in `gui/`, not the backend.
