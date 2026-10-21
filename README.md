@@ -1,9 +1,4 @@
-# Echoes of Expression
-IAT460 D101
-Michael Tjokrowardojo (301416843)
-
-
-# 🖋️ Creative AI Handwriting-to-Art Installation
+# 🖋️ Echoes of Expression: Creative AI Handwriting-to-Art Installation
 
 This system transforms handwritten text into AI-generated artwork using emotion and cultural interpretation. A reactive agent system gradually draws the image onto a communal canvas, representing collective expression and interconnectedness.
 
