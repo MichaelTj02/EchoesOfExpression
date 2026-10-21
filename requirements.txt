@@ -3,6 +3,7 @@ openai
 torch
 # diffusers >= 0.36 needs torch >= 2.6 (torch.accelerator); these pins work with torch 2.5
 diffusers==0.35.2
+accelerate
 transformers>=4.46,<5
 huggingface-hub<1.0
 Pillow

@@ -4,7 +4,7 @@ import logging
 import sys
 from dataclasses import fields
 
-from . import EchoesEngine, MissingAPIKeyError, NoTextFoundError
+from . import EchoesEngine, LLMConnectionError, MissingAPIKeyError, NoTextFoundError
 
 
 def main() -> int:
@@ -12,6 +12,9 @@ def main() -> int:
     parser.add_argument("image", help="Path to a handwriting image")
     parser.add_argument("--steps", type=int, default=None, help="Drawing loop steps (default: random 3000-4500)")
     args = parser.parse_args()
+
+    # Windows consoles default to a legacy codepage that can't print e.g. Japanese or Arabic text
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 
@@ -22,7 +25,7 @@ def main() -> int:
             on_progress=lambda stage, msg: print(f"[{stage}] {msg}"),
             draw_steps=args.steps,
         )
-    except (MissingAPIKeyError, NoTextFoundError) as e:
+    except (MissingAPIKeyError, LLMConnectionError, NoTextFoundError) as e:
         print(f"Error: {e}", file=sys.stderr)
         return 1
 

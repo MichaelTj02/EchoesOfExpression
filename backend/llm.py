@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from .config import LLM_MODEL
+from .config import EMOTIONS, LLM_BASE_URL, LLM_MODEL
 
 logger = logging.getLogger(__name__)
 
@@ -20,28 +20,91 @@ class MissingAPIKeyError(RuntimeError):
     pass
 
 
-def make_client(api_key: str | None = None) -> "openai.OpenAI":
+class LLMConnectionError(RuntimeError):
+    pass
+
+
+# Model can be overridden in .env; make_client loads .env before any LLM call
+def llm_model() -> str:
+    return os.getenv("LLM_MODEL") or LLM_MODEL
+
+
+def make_client(api_key: str | None = None, base_url: str | None = None) -> "openai.OpenAI":
     # Imported here so the rest of the backend can be used without these installed
     import openai
     from dotenv import load_dotenv
 
-    if not api_key:
-        load_dotenv()  # load .env file to get API KEY
-        api_key = os.getenv("OPENAI_API_KEY")
+    load_dotenv()  # load .env file for LLM_* / OPENAI_API_KEY settings
+    base_url = base_url or os.getenv("LLM_BASE_URL") or LLM_BASE_URL
+    api_key = api_key or os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY")
 
     if not api_key:
-        raise MissingAPIKeyError("OpenAI API key not found. Set OPENAI_API_KEY in a .env file.")
+        if "api.openai.com" in base_url:
+            raise MissingAPIKeyError("OpenAI API key not found. Set OPENAI_API_KEY in a .env file.")
+        api_key = "local"  # local servers like Ollama ignore the key, but the client requires one
 
-    return openai.OpenAI(api_key=api_key)
+    logger.info("Using LLM %s at %s", llm_model(), base_url)
+    return openai.OpenAI(api_key=api_key, base_url=base_url)
 
 
 def check_connection(client) -> str:
-    response = client.chat.completions.create(
-        model=LLM_MODEL,
-        messages=[{"role": "user", "content": "Hello from OpenAI API!"}],
-        max_tokens=20
-    )
+    try:
+        response = client.chat.completions.create(
+            model=llm_model(),
+            messages=[{"role": "user", "content": "Hello!"}],
+            max_tokens=20
+        )
+    except Exception as e:
+        import openai  # only reached when the real client raised
+
+        # Turn the common local-server failures into actionable messages
+        if isinstance(e, openai.APIConnectionError):
+            raise LLMConnectionError(
+                f"Could not reach the LLM server at {client.base_url}. "
+                "If you're using Ollama, make sure it is running."
+            ) from e
+        if isinstance(e, openai.NotFoundError):
+            raise LLMConnectionError(
+                f"Model '{llm_model()}' not found at {client.base_url}. "
+                f"For Ollama, run: ollama pull {llm_model()}"
+            ) from e
+        raise
+
     return response.choices[0].message.content
+
+
+# Small models don't always stick to the exact labels
+EMOTION_SYNONYMS = {
+    "joy": "Happiness", "happy": "Happiness",
+    "sad": "Sadness", "sorrow": "Sadness",
+    "afraid": "Fear", "fearful": "Fear", "anxiety": "Fear",
+    "angry": "Anger", "rage": "Anger",
+    "surprised": "Surprise",
+    "disgusted": "Disgust",
+}
+
+
+# Small models sometimes answer with ISO codes or lowercase names
+LANGUAGE_CODES = {
+    "en": "English", "es": "Spanish", "fr": "French", "de": "German", "it": "Italian",
+    "pt": "Portuguese", "ru": "Russian", "zh": "Chinese", "ja": "Japanese", "ko": "Korean",
+    "ar": "Arabic", "hi": "Hindi", "id": "Indonesian", "th": "Thai", "pl": "Polish",
+    "tr": "Turkish", "vi": "Vietnamese", "nl": "Dutch", "ky": "Kyrgyz",
+}
+
+
+def normalize_language(value) -> str:
+    language = str(value or "").strip()
+    if not language or language.lower() == "unknown":
+        return "Unknown"
+    return LANGUAGE_CODES.get(language.lower(), language.title())
+
+
+def normalize_emotion(value) -> str:
+    emotion = str(value).strip().capitalize()
+    if emotion in EMOTIONS:
+        return emotion
+    return EMOTION_SYNONYMS.get(emotion.lower(), "Unknown")
 
 
 def parse_json(raw: str) -> dict:
@@ -78,52 +141,61 @@ def image_to_data_url(image) -> str:
 # Extract handwriting image
 def extract_text(client, data_url: str) -> tuple[str | None, str]:
     try:
-        # Send request to OpenAI GPT-4o
         response = client.chat.completions.create(
-            model=LLM_MODEL,
+            model=llm_model(),
             messages=[
                 {
                     "role": "user",
                     "content": [
                         {"type": "text", "text":
-                            "Extract the handwritten text from this image and detect its language."
-                            "Return the result in JSON format: {\"text\": \"extracted text\", \"language\": \"detected language\"}."
+                            "Extract the handwritten text from this image and detect its language. "
+                            "Return the result in JSON format: {\"text\": \"extracted text\", \"language\": \"detected language\"}. "
+                            "The language must be its full English name (e.g. English, Spanish, Japanese), not a code. "
                             "Do not add extra explanations, just return valid JSON."
                         },
                         {"type": "image_url", "image_url": {"url": data_url}}
                     ]
                 }
             ],
-            max_tokens=500
+            max_tokens=500,
+            temperature=0,
+            response_format={"type": "json_object"}
         )
 
         raw_response = response.choices[0].message.content.strip()
         text_data = parse_json(raw_response)
 
         extracted_text = text_data.get("text", "Unknown")
-        detected_language = text_data.get("language", "Unknown")
+        detected_language = normalize_language(text_data.get("language", "Unknown"))
         if detected_language == "Unknown":
             logger.info("OCR did not detect a language. Raw response: %s", raw_response)
 
         return extracted_text, detected_language
 
     except Exception as e:
-        logger.error("OpenAI API Error: %s", e)
+        logger.error("OCR Error: %s", e)
         return None, "Unknown"
 
 
-# Detect language & translate to English using GPT-4o
-def translate_to_english(client, text: str) -> str:
+# Translate to English
+def translate_to_english(client, text: str, language: str = "Unknown") -> str:
+    source = f"{language} " if language != "Unknown" else ""
     try:
         response = client.chat.completions.create(
-            model=LLM_MODEL,
+            model=llm_model(),
             messages=[
-                {"role": "user", "content": f"Detect the language of this text: '{text}'. If it's not English, translate it to English. If it's already in English, return the same text."}
+                {"role": "user", "content": f"Translate this {source}text to English: '{text}'. "
+                 "Return ONLY a JSON object: {\"translation\": \"the English translation\"}. No explanations."}
             ],
-            max_tokens=500
+            max_tokens=500,
+            temperature=0,
+            response_format={"type": "json_object"}
         )
 
-        return response.choices[0].message.content.strip()
+        translation = parse_json(response.choices[0].message.content).get("translation")
+        if not isinstance(translation, str) or not translation.strip():
+            raise ValueError("No translation in response.")
+        return translation.strip()
 
     except Exception as e:
         logger.error("Translation Error: %s", e)
@@ -134,25 +206,32 @@ def translate_to_english(client, text: str) -> str:
 def analyze_emotion(client, text: str) -> dict:
     try:
         response = client.chat.completions.create(
-            model=LLM_MODEL,
+            model=llm_model(),
             messages=[
                 {"role": "user", "content": f"Analyze the following text: '{text}'. "
                  "Return ONLY a JSON object with the following structure: "
-                 "{\"emotion\": \"Happiness\", \"confidence\": 0.92, \"language\": \"English\"}. "
+                 "{\"emotion\": \"<emotion>\", \"confidence\": <number>, \"language\": \"<language>\"}. "
                  "The 'emotion' should be one of: Happiness, Sadness, Fear, Anger, Surprise, or Disgust. "
                  "The 'confidence' should be a float between 0 and 1. "
                  "The 'language' should be a single-word language name (e.g., English, Japanese, Chinese). "
                  "No explanations, no extra text—return only a valid JSON output."}
             ],
-            max_tokens=100
+            max_tokens=100,
+            temperature=0,
+            response_format={"type": "json_object"}
         )
 
         text_analysis_data = parse_json(response.choices[0].message.content)
 
+        try:
+            confidence = float(text_analysis_data.get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+
         return {
-            "emotion": text_analysis_data.get("emotion", "Unknown"),
-            "confidence": text_analysis_data.get("confidence", 0.0),
-            "language": text_analysis_data.get("language", "Unknown")
+            "emotion": normalize_emotion(text_analysis_data.get("emotion", "Unknown")),
+            "confidence": confidence,
+            "language": normalize_language(text_analysis_data.get("language", "Unknown"))
         }
 
     except Exception as e:
@@ -173,7 +252,7 @@ def get_visual_goal(client, language: str) -> str:
 
     try:
         response = client.chat.completions.create(
-            model=LLM_MODEL,
+            model=llm_model(),
             messages=[
                 {"role": "system", "content": "You are an expert in global art and culture."},
                 {"role": "user", "content": f"Provide only **two or three words** that represent a traditional artistic style, symbol, or pattern from the culture associated with the {language} language. Do not give explanations. Just return the keywords."}
@@ -213,12 +292,13 @@ def fetch_cultural_info(client, language: str) -> dict:
     content = ""
     try:
         response = client.chat.completions.create(
-            model=LLM_MODEL,
+            model=llm_model(),
             messages=[
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt}
             ],
-            max_tokens=150
+            max_tokens=150,
+            response_format={"type": "json_object"}
         )
 
         content = response.choices[0].message.content

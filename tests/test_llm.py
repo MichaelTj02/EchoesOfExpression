@@ -89,8 +89,15 @@ def test_extract_text_invalid_json_falls_back():
 # translate_to_english
 
 def test_translate_to_english_happy_path():
-    client = FakeOpenAIClient({TRANSLATE: "  Hello world  "})
-    assert llm.translate_to_english(client, "Hola mundo") == "Hello world"
+    client = FakeOpenAIClient({TRANSLATE: '{"translation": "  Hello world  "}'})
+    assert llm.translate_to_english(client, "Hola mundo", "Spanish") == "Hello world"
+    assert "Spanish text" in client.prompts()[0]
+
+
+@pytest.mark.parametrize("response", ["Hello world, no JSON here", '{"translation": ""}', '{"other": "x"}'])
+def test_translate_to_english_bad_reply_returns_original(response):
+    client = FakeOpenAIClient({TRANSLATE: response})
+    assert llm.translate_to_english(client, "Hola mundo") == "Hola mundo"
 
 
 def test_translate_to_english_failure_returns_original():
@@ -190,26 +197,112 @@ def test_check_connection_returns_reply():
 
 # make_client
 
-def test_make_client_without_key_raises(monkeypatch, tmp_path):
+@pytest.fixture
+def no_llm_env(monkeypatch, tmp_path):
     pytest.importorskip("openai")
     dotenv = pytest.importorskip("dotenv")
-
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    for name in ("OPENAI_API_KEY", "LLM_API_KEY", "LLM_BASE_URL", "LLM_MODEL"):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.chdir(tmp_path)
     # make_client imports load_dotenv lazily, so this stops it finding a real .env
     monkeypatch.setattr(dotenv, "load_dotenv", lambda *args, **kwargs: False)
+    return monkeypatch
 
+
+def test_make_client_defaults_to_local_server_without_key(no_llm_env):
+    client = llm.make_client()
+    assert str(client.base_url).startswith(llm.LLM_BASE_URL)
+
+
+def test_make_client_openai_without_key_raises(no_llm_env):
     with pytest.raises(llm.MissingAPIKeyError):
-        llm.make_client()
+        llm.make_client(base_url="https://api.openai.com/v1")
 
 
-def test_make_client_with_explicit_key(monkeypatch):
-    openai = pytest.importorskip("openai")
-    pytest.importorskip("dotenv")
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+def test_make_client_reads_base_url_and_key_from_env(no_llm_env):
+    no_llm_env.setenv("LLM_BASE_URL", "https://api.openai.com/v1")
+    no_llm_env.setenv("OPENAI_API_KEY", "sk-test-key")
+    client = llm.make_client()
+    assert "api.openai.com" in str(client.base_url)
+    assert client.api_key == "sk-test-key"
+
+
+def test_make_client_with_explicit_key(no_llm_env):
+    import openai
 
     client = llm.make_client("sk-test-key")
     assert isinstance(client, openai.OpenAI)
+
+
+def test_llm_model_env_override(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    assert llm.llm_model() == llm.LLM_MODEL
+    monkeypatch.setenv("LLM_MODEL", "gemma3:12b")
+    assert llm.llm_model() == "gemma3:12b"
+
+
+def test_check_connection_unreachable_server_gives_clear_error(no_llm_env):
+    # Nothing listens on port 9, so the real client fails to connect
+    client = llm.make_client(base_url="http://127.0.0.1:9/v1")
+    client = client.with_options(max_retries=0, timeout=2)
+    with pytest.raises(llm.LLMConnectionError, match="Could not reach"):
+        llm.check_connection(client)
+
+
+# normalize_language
+
+@pytest.mark.parametrize("raw, expected", [
+    ("English", "English"),
+    ("en", "English"),
+    ("polish", "Polish"),
+    (" JA ", "Japanese"),
+    ("unknown", "Unknown"),
+    ("", "Unknown"),
+    (None, "Unknown"),
+])
+def test_normalize_language(raw, expected):
+    assert llm.normalize_language(raw) == expected
+
+
+def test_extract_text_normalizes_language_code():
+    client = FakeOpenAIClient({OCR: '{"text": "I am happy", "language": "en"}'})
+    assert llm.extract_text(client, "data:image/png;base64,AAAA") == ("I am happy", "English")
+
+
+# normalize_emotion
+
+@pytest.mark.parametrize("raw, expected", [
+    ("Happiness", "Happiness"),
+    ("sadness", "Sadness"),
+    (" ANGER ", "Anger"),
+    ("joy", "Happiness"),
+    ("Afraid", "Fear"),
+    ("Neutral", "Unknown"),
+    (None, "Unknown"),
+])
+def test_normalize_emotion(raw, expected):
+    assert llm.normalize_emotion(raw) == expected
+
+
+def test_analyze_emotion_normalizes_label_and_confidence():
+    client = FakeOpenAIClient(
+        {EMOTION: '{"emotion": "joy", "confidence": "0.7", "language": "English"}'}
+    )
+    result = llm.analyze_emotion(client, "yay")
+    assert result["emotion"] == "Happiness"
+    assert result["confidence"] == 0.7
+
+
+def test_json_stages_request_json_mode():
+    client = FakeOpenAIClient({
+        OCR: '{"text": "hi", "language": "English"}',
+        EMOTION: '{"emotion": "Fear", "confidence": 0.5, "language": "English"}',
+        CULTURE: '{"culture": "a", "art_form": "b", "motif": "c", "script": "d"}',
+    })
+    llm.extract_text(client, "data:image/png;base64,AAAA")
+    llm.analyze_emotion(client, "hi")
+    llm.fetch_cultural_info(client, "English")
+    assert all(call.get("response_format") == {"type": "json_object"} for call in client.calls)
 
 
 def test_missing_api_key_error_is_exported():

@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class ImageGenerator:
-    """Stable Diffusion 2.1 wrapper; the model is only loaded on load()."""
+    """Stable Diffusion XL wrapper; the model is only loaded on load()."""
 
     def __init__(self, model_id: str = SD_MODEL_ID):
         self.model_id = model_id
@@ -28,9 +28,9 @@ class ImageGenerator:
 
         # Heavy imports kept here so importing the backend stays cheap
         import torch
-        from diffusers import StableDiffusionPipeline
+        from diffusers import StableDiffusionXLPipeline
 
-        pipeline = StableDiffusionPipeline.from_pretrained(
+        pipeline = StableDiffusionXLPipeline.from_pretrained(
             self.model_id,
             torch_dtype=torch.float16,
             variant="fp16"  # use float16 weights for efficiency
@@ -45,10 +45,8 @@ class ImageGenerator:
             device = "cpu"
 
         pipeline.to(device)
-        # Turn off NSFW filters due to overlapping stuff that may be flagged as NSFW
-        pipeline.safety_checker = None
 
-        # Optimizations
+        # Optimizations (lower VRAM use)
         pipeline.enable_attention_slicing()
         pipeline.enable_vae_slicing()
 
