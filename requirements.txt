@@ -1,7 +1,7 @@
 python-dotenv
 openai
-opencv-python
-numpy
 torch
 diffusers
+transformers
 Pillow
+pytest

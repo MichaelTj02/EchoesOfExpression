@@ -15,7 +15,13 @@ cd [project-folder]
 ```bash
 python main.py
 ```
-- When prompted, enter your OpenAI API Key in the terminal
+- If no `.env` file with `OPENAI_API_KEY` is found, the app asks for your OpenAI API Key in a dialog
+- The upload button is enabled once the models have finished loading
+
+To run the pipeline without the GUI:
+```bash
+python -m backend handwritingImages/handwriting1.png
+```
 
 ### 3. Upload a Handwriting Image
 - Click the **"Upload Handwriting Image"** button in the UI.
@@ -25,8 +31,7 @@ python main.py
 
 ### 4. Wait for Processing
 - The system will interpret the text and emotion.
-- This step may take a few seconds — progress can be seen in the terminal.
-- Seeing language not detected in the terminal is normal. (Unresolved bug)
+- This step may take a few seconds — progress is shown in the UI console.
 
 ### 5. Watch the Canvas Render
 - Once processing is complete, the drawing begins automatically under the UI console.
@@ -42,8 +47,8 @@ python main.py
 
 ## ⚠️ Important Notes
 
-- **Only input one image at a time.**  
-  Submitting multiple images simultaneously may crash the system.
+- **One image at a time.**  
+  The upload button is disabled while an image is being processed.
 
 - **OpenAI API Key needed to run the system.**  
   The system relies on OpenAI's GPT-4o for its OCR and NLP system so a key is needed. Create a .env file in the folder and put your key inside.
