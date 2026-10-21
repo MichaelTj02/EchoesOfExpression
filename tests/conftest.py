@@ -5,7 +5,7 @@ from PIL import Image
 
 # Substrings that identify which GPT prompt is being sent
 OCR = "Extract the handwritten text"
-TRANSLATE = "translate it to English"
+TRANSLATE = "text to English"
 EMOTION = "Analyze the following text"
 VISUAL_GOAL = "two or three words"
 CULTURE = "cultural visual designer"
@@ -91,7 +91,7 @@ def make_fake_client(
     )
     return FakeOpenAIClient({
         OCR: f'{{"text": "{text}", "language": "{language}"}}',
-        TRANSLATE: translation,
+        TRANSLATE: f'{{"translation": "{translation}"}}',
         EMOTION: (
             f'{{"emotion": "{emotion}", "confidence": {confidence}, '
             f'"language": "{analysis_language}"}}'

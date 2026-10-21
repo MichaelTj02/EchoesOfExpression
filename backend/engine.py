@@ -66,11 +66,11 @@ class EchoesEngine:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        notify("load", "Connecting to OpenAI...")
+        notify("load", "Connecting to the LLM server...")
         if self.client is None:
             self.client = make_client(self.api_key)
         reply = check_connection(self.client)
-        logger.info("OpenAI connection OK: %s", reply)
+        logger.info("LLM connection OK: %s", reply)
 
         notify("load", "Loading Stable Diffusion model...")
         self.image_generator.load()
@@ -95,7 +95,7 @@ class EchoesEngine:
             translated_text = None
             if language.lower() != "english":
                 notify("translate", f"Translating from {language}...")
-                translated_text = translate_to_english(self.client, extracted_text)
+                translated_text = translate_to_english(self.client, extracted_text, language)
 
             notify("emotion", "Analyzing emotion...")
             analysis = analyze_emotion(self.client, translated_text or extracted_text)
@@ -123,7 +123,6 @@ class EchoesEngine:
                 logger.warning("Could not place agent without overlap.")
             self.canvas.run(steps=draw_steps, on_frame=on_frame)
             canvas_path = self.canvas.save(self.output_dir / FINAL_CANVAS_NAME)
-            logger.info("Canvas saved to %s", canvas_path)
 
             notify("done", "Drawing complete.")
 
