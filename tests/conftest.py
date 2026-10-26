@@ -56,6 +56,7 @@ class StubImageGenerator:
         self.size = size
         self.load_count = 0
         self.prompts = []
+        self.batches = []  # prompt lists, one per generate_batch call
 
     @property
     def loaded(self):
@@ -64,9 +65,13 @@ class StubImageGenerator:
     def load(self):
         self.load_count += 1
 
-    def generate(self, prompt, size=None):
-        self.prompts.append(prompt)
-        return Image.new("RGB", size or self.size, self.color)
+    def generate_batch(self, prompts):
+        self.batches.append(list(prompts))
+        self.prompts.extend(prompts)
+        return [Image.new("RGB", self.size, self.color) for _ in prompts]
+
+    def generate(self, prompt):
+        return self.generate_batch([prompt])[0]
 
 
 def make_fake_client(

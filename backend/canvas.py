@@ -13,9 +13,9 @@ from .config import (
     BG_COLOR,
     CANVAS_HEIGHT,
     CANVAS_WIDTH,
-    DRAW_STEPS_RANGE,
     FRAME_DELAY,
     FRAME_EVERY,
+    MAX_DRAW_STEPS,
     MAX_OVERLAP_RATIO,
     PLACEMENT_ATTEMPTS,
 )
@@ -71,28 +71,43 @@ class CollaborativeCanvas:
 
             if not overlap:
                 self.used_regions.append(new_box)
-                self.agents.append(Agent(image, x, y, emotion=emotion, input_counter=self.input_counter))
+                self.agents.append(Agent(image, x, y, emotion=emotion))
                 return True
 
         logger.warning("Could not place agent without overlap.")
         return False
 
-    def run(self, steps: int | None = None, on_frame=None) -> None:
-        if steps is None:  # randomize amount of steps for each agent
-            steps = random.randint(*DRAW_STEPS_RANGE)
+    def run(self, steps: int | None = None, on_frame=None) -> int:
+        """Let every agent paint until it has finished its drawing.
 
+        With ``steps=None`` the run lasts until all agents are done (capped at
+        ``MAX_DRAW_STEPS``); with ``steps=N`` it lasts at most N steps. Finished
+        agents are removed; unfinished ones carry over to the next run.
+        ``on_frame`` gets a flattened copy every ``FRAME_EVERY`` steps (each
+        followed by a ``frame_delay`` pause) and once more when the run ends.
+        Returns the number of steps taken.
+        """
         self.input_counter += 1
-        for step in range(steps):
-            active_agents = []
+        limit = MAX_DRAW_STEPS if steps is None else steps
+
+        step = 0
+        while step < limit and self.agents:
             for agent in self.agents:
-                if self.input_counter - agent.last_seen_input <= agent.max_rounds:
-                    agent.update(self.image)
-                    active_agents.append(agent)
-            self.agents = active_agents
+                agent.update(self.image)
+            self.agents = [agent for agent in self.agents if not agent.done]
 
             if on_frame and step % FRAME_EVERY == 0:
                 on_frame(self.flattened())
                 time.sleep(self.frame_delay)
+            step += 1
+
+        if steps is None and self.agents:
+            logger.warning(
+                "Stopped drawing after %d steps with %d unfinished agent(s).", step, len(self.agents)
+            )
+        if on_frame:
+            on_frame(self.flattened())  # final frame shows the finished canvas
+        return step
 
     def flattened(self) -> Image.Image:
         # flatten image over the background colour
