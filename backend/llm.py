@@ -11,7 +11,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from .config import EMOTIONS, LLM_BASE_URL, LLM_MODEL
+from .config import EMOTIONS, LLM_BASE_URL, LLM_MODEL, PAINTER_CHOICES
 
 logger = logging.getLogger(__name__)
 
@@ -312,3 +312,53 @@ def fetch_cultural_info(client, language: str) -> dict:
     except Exception as e:
         logger.error("GPT API Error: %s", e)
         return _default_cultural_info(language)
+
+
+def suggest_painters(client, language: str, count: int = PAINTER_CHOICES) -> list[dict]:
+    """Asks the LLM for famous painters from the region where the language is spoken.
+    Returns [{"name", "style"}, ...], or [] when the language is unknown or the call fails."""
+    if language == "Unknown":
+        logger.info("Language not detected.")
+        return []
+
+    # Naming the region first keeps small models from drifting to unrelated (usually European) painters
+    system_prompt = (
+        "You are an art historian. Given a language, respond ONLY in raw JSON format with two keys: "
+        "'region' (the country where the language is mainly spoken) and "
+        f"'painters': a list of {count} different famous painters who were born in or worked in that region, "
+        "mixing eras and art movements. Only name real, well-known painters.\n"
+        "Each item has 'name' (the painter's full name) and 'style' (their painting style in 5–12 words: "
+        "movement, brushwork, palette). DO NOT return markdown or explanations."
+    )
+
+    content = ""
+    try:
+        response = client.chat.completions.create(
+            model=llm_model(),
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"The language is: {language}."}
+            ],
+            max_tokens=400,
+            response_format={"type": "json_object"}
+        )
+
+        content = response.choices[0].message.content
+        painters = parse_json(content).get("painters")
+        if not isinstance(painters, list):
+            raise ValueError("'painters' is not a list")
+
+        # Drop malformed entries rather than the whole reply
+        return [
+            {"name": str(item["name"]).strip(), "style": str(item.get("style") or "").strip()}
+            for item in painters
+            if isinstance(item, dict) and str(item.get("name") or "").strip()
+        ]
+
+    except ValueError:
+        logger.error("Failed to parse painter suggestions as JSON. Raw response:\n%s", content)
+        return []
+
+    except Exception as e:
+        logger.error("GPT API Error: %s", e)
+        return []

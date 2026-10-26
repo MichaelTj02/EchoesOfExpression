@@ -19,6 +19,7 @@ def format_summary(result: PipelineResult) -> str:
         f"Translated: {translated}\n"
         f"Emotion: {result.emotion} (Confidence: {result.confidence:.2f})\n"
         f"Composition: {result.composition_style}\n"
+        f"Painter: {result.painter or 'None suggested'}\n"
         f"Cultural Visual: {result.visual_goal}\n"
         f"Prompt: {result.prompt}"
     )

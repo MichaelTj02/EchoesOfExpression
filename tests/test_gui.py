@@ -16,6 +16,7 @@ def make_result(**overrides):
         emotion="Happiness",
         confidence=0.923,
         composition_style="Symmetrical & Balanced",
+        painter="Diego Velazquez",
         visual_goal="Talavera tiles",
         prompt="A high-resolution digital painting of ...",
         generated_image_path=Path("image/generated_image.png"),
@@ -33,6 +34,7 @@ def test_format_summary_lists_every_field():
     assert "Translated: Hello world" in summary
     assert "Emotion: Happiness (Confidence: 0.92)" in summary
     assert "Composition: Symmetrical & Balanced" in summary
+    assert "Painter: Diego Velazquez" in summary
     assert "Cultural Visual: Talavera tiles" in summary
     assert "Prompt: A high-resolution digital painting of ..." in summary
 
@@ -40,3 +42,7 @@ def test_format_summary_lists_every_field():
 def test_format_summary_english_input():
     summary = format_summary(make_result(language="English", translated_text=None))
     assert "Translated: Already in English" in summary
+
+
+def test_format_summary_without_painter():
+    assert "Painter: None suggested" in format_summary(make_result(painter=None))

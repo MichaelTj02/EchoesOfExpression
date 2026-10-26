@@ -5,7 +5,7 @@ import pytest
 from PIL import Image
 
 from backend import llm
-from conftest import CULTURE, EMOTION, OCR, TRANSLATE, VISUAL_GOAL, FakeOpenAIClient
+from conftest import CULTURE, EMOTION, OCR, PAINTERS, TRANSLATE, VISUAL_GOAL, FakeOpenAIClient
 
 
 # parse_json
@@ -187,6 +187,44 @@ def test_fetch_cultural_info_unknown_language_skips_api():
     assert client.calls == []
 
 
+# suggest_painters
+
+def test_suggest_painters_happy_path():
+    client = FakeOpenAIClient({
+        PAINTERS: '```json\n{"painters": [{"name": " Claude Monet ", "style": "impressionist, soft light"}, '
+                  '{"name": "Henri Matisse"}]}\n```'
+    })
+    assert llm.suggest_painters(client, "French", count=2) == [
+        {"name": "Claude Monet", "style": "impressionist, soft light"},
+        {"name": "Henri Matisse", "style": ""},
+    ]
+    assert any("French" in prompt and "2 different famous painters" in prompt for prompt in client.prompts())
+
+
+def test_suggest_painters_drops_malformed_entries():
+    client = FakeOpenAIClient({
+        PAINTERS: '{"painters": ["Monet", {"style": "no name"}, {"name": ""}, {"name": "Edgar Degas", "style": null}]}'
+    })
+    assert llm.suggest_painters(client, "French") == [{"name": "Edgar Degas", "style": ""}]
+
+
+@pytest.mark.parametrize("response", [
+    RuntimeError("boom"),
+    "not json at all",
+    '{"painters": "Claude Monet"}',
+    '{"artists": []}',
+])
+def test_suggest_painters_failure_returns_empty(response):
+    client = FakeOpenAIClient({PAINTERS: response})
+    assert llm.suggest_painters(client, "French") == []
+
+
+def test_suggest_painters_unknown_language_skips_api():
+    client = FakeOpenAIClient()
+    assert llm.suggest_painters(client, "Unknown") == []
+    assert client.calls == []
+
+
 # check_connection
 
 def test_check_connection_returns_reply():
@@ -298,10 +336,12 @@ def test_json_stages_request_json_mode():
         OCR: '{"text": "hi", "language": "English"}',
         EMOTION: '{"emotion": "Fear", "confidence": 0.5, "language": "English"}',
         CULTURE: '{"culture": "a", "art_form": "b", "motif": "c", "script": "d"}',
+        PAINTERS: '{"painters": []}',
     })
     llm.extract_text(client, "data:image/png;base64,AAAA")
     llm.analyze_emotion(client, "hi")
     llm.fetch_cultural_info(client, "English")
+    llm.suggest_painters(client, "English")
     assert all(call.get("response_format") == {"type": "json_object"} for call in client.calls)
 
 

@@ -28,6 +28,9 @@ FRAME_DELAY = 0.1  # seconds paused after each preview frame, keeps the drawing 
 LLM_BASE_URL = "http://localhost:11434/v1"
 LLM_MODEL = "qwen2.5vl:7b"
 
+# Painters the LLM suggests for the language's region; one is picked at random each upload
+PAINTER_CHOICES = 3  # longer lists get padded with invented names by small local models
+
 # Emotion labels the rest of the pipeline understands
 EMOTIONS = ("Happiness", "Sadness", "Fear", "Anger", "Surprise", "Disgust")
 

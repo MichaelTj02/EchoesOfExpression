@@ -1,3 +1,5 @@
+import random
+
 import pytest
 from PIL import Image
 
@@ -8,12 +10,13 @@ from backend.engine import STAGES
 from conftest import OCR, FakeOpenAIClient, StubImageGenerator, make_fake_client
 
 
-def make_engine(tmp_path, client=None, generator=None):
+def make_engine(tmp_path, client=None, generator=None, rng=None):
     return EchoesEngine(
         output_dir=tmp_path / "out",
         client=client or make_fake_client(),
         image_generator=generator or StubImageGenerator(),
         canvas=CollaborativeCanvas(width=400, height=300),
+        rng=rng,
     )
 
 
@@ -78,6 +81,8 @@ def test_process_english(tmp_path, handwriting_png):
     assert result.visual_goal == "Mandala patterns"
     for value in ("Balinese", "batik painting", "lotus flowers", "Balinese script", "Symmetrical & Balanced"):
         assert value in result.prompt
+    assert result.painter == "Raden Saleh"
+    assert "in the style of Raden Saleh, romantic, dramatic light" in result.prompt
     assert generator.prompts == [result.prompt]
     assert frames and all(isinstance(frame, Image.Image) for frame in frames)
 
@@ -128,6 +133,26 @@ def test_process_falls_back_to_analysis_language(tmp_path, handwriting_png):
 
     assert result.language == "French"
     assert any("French" in prompt and "cultural visual designer" in prompt for prompt in client.prompts())
+
+
+def test_process_picks_painter_at_random(tmp_path, handwriting_png):
+    client = make_fake_client(
+        painters='{"painters": [{"name": "Claude Monet", "style": "a"}, {"name": "Henri Matisse", "style": "b"}, '
+                 '{"name": "Paul Cezanne", "style": "c"}]}'
+    )
+    engine = make_engine(tmp_path, client, rng=random.Random(0))
+    expected = random.Random(0).choice(["Claude Monet", "Henri Matisse", "Paul Cezanne"])
+
+    result, _, _ = run(engine, handwriting_png)
+
+    assert result.painter == expected
+
+
+def test_process_without_painters_uses_default_style(tmp_path, handwriting_png):
+    engine = make_engine(tmp_path, make_fake_client(painters="not json"))
+    result, _, _ = run(engine, handwriting_png)
+    assert result.painter is None
+    assert "expressive textured brushwork" in result.prompt
 
 
 def test_process_accepts_pil_image(tmp_path):
