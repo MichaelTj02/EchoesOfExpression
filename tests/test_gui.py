@@ -5,7 +5,7 @@ import pytest
 pytest.importorskip("tkinter")
 
 from backend import PipelineResult  # noqa: E402
-from gui.app import format_summary  # noqa: E402
+from gui.app import format_batch_summary, format_summary  # noqa: E402
 
 
 def make_result(**overrides):
@@ -19,7 +19,7 @@ def make_result(**overrides):
         painter="Diego Velazquez",
         visual_goal="Talavera tiles",
         prompt="A high-resolution digital painting of ...",
-        generated_image_path=Path("image/generated_image.png"),
+        generated_image_path=Path("image/generated_image_1.png"),
         canvas_path=Path("image/final_collaborative_canvas.png"),
     )
     fields.update(overrides)
@@ -46,3 +46,15 @@ def test_format_summary_english_input():
 
 def test_format_summary_without_painter():
     assert "Painter: None suggested" in format_summary(make_result(painter=None))
+
+
+def test_format_batch_summary_lists_results_and_errors_per_image():
+    summary = format_batch_summary(
+        [make_result(), RuntimeError("Could not extract any text from image")],
+        ["photos/first.png", Path("photos/second.jpg")],
+    )
+
+    first, second = summary.split("\n\n")
+    assert first.startswith("[1/2] first.png\n")
+    assert "Text: Hola mundo" in first
+    assert second == "[2/2] second.jpg\nError: Could not extract any text from image"

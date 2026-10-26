@@ -3,11 +3,14 @@ from __future__ import annotations
 import logging
 import random
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image
+
 from .canvas import CollaborativeCanvas
-from .config import FINAL_CANVAS_NAME, GENERATED_IMAGE_NAME, OUTPUT_DIR
+from .config import FINAL_CANVAS_NAME, GENERATED_IMAGE_NAME, LLM_WORKERS, MAX_UPLOADS_PER_BATCH, OUTPUT_DIR
 from .image_gen import ImageGenerator
 from .llm import (
     analyze_emotion,
@@ -44,6 +47,33 @@ class PipelineResult:
     prompt: str
     generated_image_path: Path
     canvas_path: Path
+
+
+@dataclass
+class _Analysis:
+    """Output of the LLM stages for one image; the painter and prompt are chosen afterwards."""
+
+    extracted_text: str
+    language: str
+    translated_text: str | None
+    emotion: str
+    confidence: float
+    composition_style: str
+    visual_goal: str
+    cultural_info: dict
+    painters: list
+
+
+def _image_label(image, position: int) -> str:
+    if isinstance(image, Image.Image):
+        return f"image {position}"
+    return Path(image).name
+
+
+def generated_image_name(position: int) -> str:
+    """File name for the position-th (1-based) image of a batch, e.g. generated_image_2.png."""
+    base = Path(GENERATED_IMAGE_NAME)
+    return f"{base.stem}_{position}{base.suffix}"
 
 
 class EchoesEngine:
@@ -83,69 +113,138 @@ class EchoesEngine:
         notify("load", "Models loaded.")
 
     def process(self, image, on_progress=None, on_frame=None, draw_steps=None) -> PipelineResult:
-        notify = on_progress or (lambda stage, msg: None)
+        """Run the pipeline for one image; raises if its analysis fails."""
+        result = self.process_many([image], on_progress=on_progress, on_frame=on_frame, draw_steps=draw_steps)[0]
+        if isinstance(result, Exception):
+            raise result
+        return result
 
-        # Only one image at a time: canvas, agents and output files are shared
+    def process_many(self, images, on_progress=None, on_frame=None, draw_steps=None) -> list[PipelineResult | Exception]:
+        """Run the pipeline for several images and paint them onto the canvas at the same time.
+
+        Returns one entry per input image, in input order: its PipelineResult, or the exception
+        that stopped its analysis. Load, generation and drawing errors are raised instead.
+        `on_progress` may be called from worker threads.
+        """
+        images = list(images)
+        if len(images) > MAX_UPLOADS_PER_BATCH:
+            raise ValueError(f"At most {MAX_UPLOADS_PER_BATCH} images can be uploaded at once, got {len(images)}")
+        if not images:
+            return []
+        notify = on_progress or (lambda stage, msg: None)
+        total = len(images)
+
+        def image_notify(position, image):
+            if total == 1:
+                return notify  # single uploads keep unprefixed messages
+            prefix = f"[{position}/{total} {_image_label(image, position)}] "
+            return lambda stage, msg: notify(stage, prefix + msg)
+
+        # One batch at a time: canvas, agents and output files are shared
         with self._lock:
             if not self._loaded:
                 self.load(on_progress=on_progress)
 
-            # Extract handwritten text & language
-            notify("ocr", "Reading handwriting...")
-            extracted_text, language = extract_text(self.client, image_to_data_url(image))
-            if not extracted_text:
-                raise NoTextFoundError("Could not extract any text from image")
+            # The LLM stages are network-bound and the client is thread-safe, so analyze concurrently
+            with ThreadPoolExecutor(max_workers=min(LLM_WORKERS, total)) as executor:
+                futures = [
+                    executor.submit(self._analyze, image, image_notify(position, image))
+                    for position, image in enumerate(images, start=1)
+                ]
+            results: list = []
+            for position, (image, future) in enumerate(zip(images, futures), start=1):
+                try:
+                    results.append(future.result())
+                except Exception as e:  # one bad image must not stop the rest of the batch
+                    logger.warning("Analysis failed for %s: %s", _image_label(image, position), e)
+                    results.append(e)
 
-            translated_text = None
-            if language.lower() != "english":
-                notify("translate", f"Translating from {language}...")
-                translated_text = translate_to_english(self.client, extracted_text, language)
+            analyzed = [i for i, r in enumerate(results) if isinstance(r, _Analysis)]
+            if not analyzed:
+                return results
 
-            notify("emotion", "Analyzing emotion...")
-            analysis = analyze_emotion(self.client, translated_text or extracted_text)
-            emotion = analysis["emotion"]
-            confidence = analysis["confidence"]
+            # Painters are picked here in input order, not in the workers, so a seeded rng is
+            # deterministic. A different painter from the region each time, so repeat languages vary
+            painters, prompts = [], []
+            for i in analyzed:
+                analysis = results[i]
+                painter = self.rng.choice(analysis.painters) if analysis.painters else None
+                painters.append(painter)
+                prompts.append(build_prompt(analysis.cultural_info, analysis.composition_style, painter))
 
-            # OCR sometimes fails to name the language; the emotion analysis also reports one
-            if language == "Unknown" and analysis.get("language", "Unknown") != "Unknown":
-                logger.info("OCR language unknown, falling back to analysis language: %s", analysis["language"])
-                language = analysis["language"]
+            if len(prompts) == 1:
+                notify("generate", "Generating image with Stable Diffusion...")
+            else:
+                notify("generate", f"Generating {len(prompts)} images with Stable Diffusion...")
+            generated_images = self.image_generator.generate_batch(prompts)
 
-            notify("culture", f"Finding cultural context for {language}...")
-            composition_style = composition_for(emotion)
-            visual_goal = get_visual_goal(self.client, language)
-            cultural_info = fetch_cultural_info(self.client, language)
-            # A different painter from the region each time, so repeat languages vary
-            painters = suggest_painters(self.client, language)
-            painter = self.rng.choice(painters) if painters else None
-
-            notify("generate", "Generating image with Stable Diffusion...")
-            prompt = build_prompt(cultural_info, composition_style, painter)
-            generated = self.image_generator.generate(prompt)
-            generated_image_path = self.output_dir / GENERATED_IMAGE_NAME
-            generated.save(generated_image_path)
+            paths = []
+            for i, generated in zip(analyzed, generated_images):
+                path = self.output_dir / generated_image_name(i + 1)
+                generated.save(path)
+                paths.append(path)
 
             notify("draw", "Drawing onto the canvas...")
-            if not self.canvas.add_agent(generated, emotion):
-                logger.warning("Could not place agent without overlap.")
+            for i, generated in zip(analyzed, generated_images):
+                if not self.canvas.add_agent(generated, results[i].emotion):
+                    logger.warning("Could not place agent for %s without overlap.", _image_label(images[i], i + 1))
+            # A single run for the whole batch, so all new paintings are drawn at the same time
             self.canvas.run(steps=draw_steps, on_frame=on_frame)
             canvas_path = self.canvas.save(self.output_dir / FINAL_CANVAS_NAME)
 
             notify("done", "Drawing complete.")
 
-            return PipelineResult(
-                extracted_text=extracted_text,
-                language=language,
-                translated_text=translated_text,
-                emotion=emotion,
-                confidence=confidence,
-                composition_style=composition_style,
-                painter=painter["name"] if painter else None,
-                visual_goal=visual_goal,
-                prompt=prompt,
-                generated_image_path=generated_image_path,
-                canvas_path=canvas_path,
-            )
+            for i, painter, prompt, path in zip(analyzed, painters, prompts, paths):
+                analysis = results[i]
+                results[i] = PipelineResult(
+                    extracted_text=analysis.extracted_text,
+                    language=analysis.language,
+                    translated_text=analysis.translated_text,
+                    emotion=analysis.emotion,
+                    confidence=analysis.confidence,
+                    composition_style=analysis.composition_style,
+                    painter=painter["name"] if painter else None,
+                    visual_goal=analysis.visual_goal,
+                    prompt=prompt,
+                    generated_image_path=path,
+                    canvas_path=canvas_path,
+                )
+            return results
+
+    def _analyze(self, image, notify) -> _Analysis:
+        """LLM stages for one image. Runs in a worker thread, so it must not touch shared state."""
+        # Extract handwritten text & language
+        notify("ocr", "Reading handwriting...")
+        extracted_text, language = extract_text(self.client, image_to_data_url(image))
+        if not extracted_text:
+            raise NoTextFoundError("Could not extract any text from image")
+
+        translated_text = None
+        if language.lower() != "english":
+            notify("translate", f"Translating from {language}...")
+            translated_text = translate_to_english(self.client, extracted_text, language)
+
+        notify("emotion", "Analyzing emotion...")
+        analysis = analyze_emotion(self.client, translated_text or extracted_text)
+        emotion = analysis["emotion"]
+
+        # OCR sometimes fails to name the language; the emotion analysis also reports one
+        if language == "Unknown" and analysis.get("language", "Unknown") != "Unknown":
+            logger.info("OCR language unknown, falling back to analysis language: %s", analysis["language"])
+            language = analysis["language"]
+
+        notify("culture", f"Finding cultural context for {language}...")
+        return _Analysis(
+            extracted_text=extracted_text,
+            language=language,
+            translated_text=translated_text,
+            emotion=emotion,
+            confidence=analysis["confidence"],
+            composition_style=composition_for(emotion),
+            visual_goal=get_visual_goal(self.client, language),
+            cultural_info=fetch_cultural_info(self.client, language),
+            painters=suggest_painters(self.client, language),
+        )
 
     def canvas_snapshot(self):
         return self.canvas.flattened()

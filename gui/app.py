@@ -1,11 +1,13 @@
 import queue
 import threading
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, messagebox, simpledialog
 
 from PIL import Image, ImageOps, ImageTk
 
 from backend import EchoesEngine, MissingAPIKeyError, PipelineResult
+from backend.config import MAX_UPLOADS_PER_BATCH
 
 POLL_MS = 50
 PREVIEW_SIZE = (960, 540)
@@ -25,6 +27,18 @@ def format_summary(result: PipelineResult) -> str:
     )
 
 
+def format_batch_summary(results, paths) -> str:
+    """One section per uploaded image: its summary, or the error that stopped it."""
+    sections = []
+    for index, (path, result) in enumerate(zip(paths, results), start=1):
+        header = f"[{index}/{len(results)}] {Path(path).name}"
+        if isinstance(result, Exception):
+            sections.append(f"{header}\nError: {result}")
+        else:
+            sections.append(f"{header}\n{format_summary(result)}")
+    return "\n\n".join(sections)
+
+
 class CulturalAI:
     def __init__(self, root: tk.Tk, engine: EchoesEngine):
         self.root = root
@@ -40,8 +54,8 @@ class CulturalAI:
         # Upload button (enabled once models are loaded)
         self.upload_btn = tk.Button(
             root,
-            text="Upload Handwriting Image",
-            command=self.upload_image,
+            text="Upload Handwriting Images",
+            command=self.upload_images,
             font=("Arial", 14),
             state=tk.DISABLED
         )
@@ -80,32 +94,42 @@ class CulturalAI:
         except Exception as e:
             self.events.put(("error", e))
 
-    def upload_image(self):
-        file_path = filedialog.askopenfilename(
-            title="Select Handwriting Image",
+    def upload_images(self):
+        file_paths = filedialog.askopenfilenames(
+            title=f"Select Handwriting Images (up to {MAX_UPLOADS_PER_BATCH})",
             filetypes=[("Image files", "*.jpg *.jpeg *.png *.bmp")]
         )
+        if not file_paths:
+            return
+        if len(file_paths) > MAX_UPLOADS_PER_BATCH:
+            messagebox.showwarning(
+                "Too Many Images",
+                f"Please select at most {MAX_UPLOADS_PER_BATCH} images at once "
+                f"({len(file_paths)} selected)."
+            )
+            return
 
-        if file_path:
-            self.upload_btn.config(state=tk.DISABLED)
-            self.output_text.delete("1.0", tk.END)
-            self.log(f"Selected: {file_path}")
-            self.log("Processing input...")
+        file_paths = list(file_paths)
+        self.upload_btn.config(state=tk.DISABLED)
+        self.output_text.delete("1.0", tk.END)
+        for path in file_paths:
+            self.log(f"Selected: {path}")
+        self.log("Processing input...")
 
-            threading.Thread(
-                target=self._process_worker,
-                args=(file_path,),
-                daemon=True
-            ).start()
+        threading.Thread(
+            target=self._process_worker,
+            args=(file_paths,),
+            daemon=True
+        ).start()
 
-    def _process_worker(self, image_path):
+    def _process_worker(self, image_paths):
         try:
-            result = self.engine.process(
-                image_path,
+            results = self.engine.process_many(
+                image_paths,
                 on_progress=lambda stage, msg: self.events.put(("progress", stage, msg)),
                 on_frame=self._set_latest_frame,
             )
-            self.events.put(("done", result))
+            self.events.put(("done", results, image_paths))
         except Exception as e:
             self.events.put(("error", e))
 
@@ -126,7 +150,12 @@ class CulturalAI:
                 elif kind == "need_key":
                     self.ask_for_key()
                 elif kind == "done":
-                    self.log(f"\nDrawing complete.\n\n{format_summary(event[1])}")
+                    results, paths = event[1], event[2]
+                    if all(isinstance(result, Exception) for result in results):
+                        self.log("\nNo image could be processed.")
+                    else:
+                        self.log("\nDrawing complete.")
+                    self.log(f"\n{format_batch_summary(results, paths)}")
                     self.upload_btn.config(state=tk.NORMAL)
                 elif kind == "error":
                     self.log(f"\nError: {event[1]}")
