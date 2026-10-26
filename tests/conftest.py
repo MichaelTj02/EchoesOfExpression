@@ -9,6 +9,7 @@ TRANSLATE = "text to English"
 EMOTION = "Analyze the following text"
 VISUAL_GOAL = "two or three words"
 CULTURE = "cultural visual designer"
+PAINTERS = "art historian"
 
 
 def _message_text(messages):
@@ -77,6 +78,7 @@ def make_fake_client(
     analysis_language="English",
     visual_goal="Mandala patterns",
     cultural_info=None,
+    painters='{"painters": [{"name": "Raden Saleh", "style": "romantic, dramatic light"}]}',
 ):
     cultural_info = cultural_info or {
         "culture": "Balinese",
@@ -98,6 +100,7 @@ def make_fake_client(
         ),
         VISUAL_GOAL: visual_goal,
         CULTURE: culture_json,
+        PAINTERS: painters,
     })
 
 

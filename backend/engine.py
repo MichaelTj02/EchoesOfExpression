@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import random
 import threading
 from dataclasses import dataclass
 from pathlib import Path
@@ -16,6 +17,7 @@ from .llm import (
     get_visual_goal,
     image_to_data_url,
     make_client,
+    suggest_painters,
     translate_to_english,
 )
 from .prompting import build_prompt, composition_for
@@ -37,6 +39,7 @@ class PipelineResult:
     emotion: str
     confidence: float
     composition_style: str
+    painter: str | None  # None when the LLM suggested no painter
     visual_goal: str
     prompt: str
     generated_image_path: Path
@@ -46,12 +49,13 @@ class PipelineResult:
 class EchoesEngine:
     """Runs the handwriting -> emotion/culture -> image -> canvas pipeline."""
 
-    def __init__(self, api_key=None, output_dir=OUTPUT_DIR, client=None, image_generator=None, canvas=None):
+    def __init__(self, api_key=None, output_dir=OUTPUT_DIR, client=None, image_generator=None, canvas=None, rng=None):
         self.api_key = api_key
         self.output_dir = Path(output_dir)
         self.client = client
         self.image_generator = image_generator if image_generator is not None else ImageGenerator()
         self.canvas = canvas if canvas is not None else CollaborativeCanvas()
+        self.rng = rng if rng is not None else random.Random()
         self._loaded = False
         self._lock = threading.Lock()
 
@@ -111,9 +115,12 @@ class EchoesEngine:
             composition_style = composition_for(emotion)
             visual_goal = get_visual_goal(self.client, language)
             cultural_info = fetch_cultural_info(self.client, language)
+            # A different painter from the region each time, so repeat languages vary
+            painters = suggest_painters(self.client, language)
+            painter = self.rng.choice(painters) if painters else None
 
             notify("generate", "Generating image with Stable Diffusion...")
-            prompt = build_prompt(cultural_info, composition_style)
+            prompt = build_prompt(cultural_info, composition_style, painter)
             generated = self.image_generator.generate(prompt)
             generated_image_path = self.output_dir / GENERATED_IMAGE_NAME
             generated.save(generated_image_path)
@@ -133,6 +140,7 @@ class EchoesEngine:
                 emotion=emotion,
                 confidence=confidence,
                 composition_style=composition_style,
+                painter=painter["name"] if painter else None,
                 visual_goal=visual_goal,
                 prompt=prompt,
                 generated_image_path=generated_image_path,

@@ -15,7 +15,20 @@ def composition_for(emotion: str) -> str:
     return COMPOSITION_MAPPING.get(emotion, COMPOSITION_MAPPING["Unknown"])
 
 
-def build_prompt(cultural_info: dict, composition_style: str) -> str:
+DEFAULT_PAINTING_STYLE = "painted with expressive textured brushwork"
+
+
+def painting_style(painter: dict | None) -> str:
+    """Describes how to paint the image, from a painter the LLM suggested (or a generic style)."""
+    if not painter:
+        return DEFAULT_PAINTING_STYLE
+    style = f"painted in the style of {painter['name']}"
+    if painter.get("style"):
+        style += f", {painter['style']}"
+    return style
+
+
+def build_prompt(cultural_info: dict, composition_style: str, painter: dict | None = None) -> str:
     culture = cultural_info["culture"]
     art_form = cultural_info["art_form"]
     motif = cultural_info["motif"]
@@ -26,7 +39,7 @@ def build_prompt(cultural_info: dict, composition_style: str) -> str:
         f"inspired by traditional {art_form}, "
         f"featuring {motif}, layered with {script}, "
         f"with a strong {composition_style} image composition. "
-        f"Rendered in cinematic lighting, textured brushwork, Van Gogh style, and borderless."
+        f"Rendered in cinematic lighting, {painting_style(painter)}, and borderless."
     )
 
     return prompt
