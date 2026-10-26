@@ -50,6 +50,8 @@ class CulturalAI:
         self.events = queue.Queue()
         # Only the newest canvas frame matters, so frames overwrite a single slot instead of queueing
         self.latest_frame = None
+        # Uploads can overlap (a new one may start while earlier ones are still drawing), so each gets a number
+        self.upload_count = 0
 
         # Upload button (enabled once models are loaded)
         self.upload_btn = tk.Button(
@@ -109,29 +111,28 @@ class CulturalAI:
             )
             return
 
+        # The button stays enabled: the canvas keeps drawing earlier uploads while this one is processed
         file_paths = list(file_paths)
-        self.upload_btn.config(state=tk.DISABLED)
-        self.output_text.delete("1.0", tk.END)
-        for path in file_paths:
-            self.log(f"Selected: {path}")
-        self.log("Processing input...")
+        self.upload_count += 1
+        tag = f"[Upload {self.upload_count}]"
+        self.log(f"\n{tag} Selected: {', '.join(Path(path).name for path in file_paths)}")
 
         threading.Thread(
             target=self._process_worker,
-            args=(file_paths,),
+            args=(file_paths, tag),
             daemon=True
         ).start()
 
-    def _process_worker(self, image_paths):
+    def _process_worker(self, image_paths, tag):
         try:
             results = self.engine.process_many(
                 image_paths,
-                on_progress=lambda stage, msg: self.events.put(("progress", stage, msg)),
+                on_progress=lambda stage, msg: self.events.put(("progress", stage, f"{tag} {msg}")),
                 on_frame=self._set_latest_frame,
             )
-            self.events.put(("done", results, image_paths))
+            self.events.put(("done", results, image_paths, tag))
         except Exception as e:
-            self.events.put(("error", e))
+            self.events.put(("error", e, tag))
 
     def _set_latest_frame(self, frame):
         self.latest_frame = frame  # attribute assignment is atomic; _poll picks it up
@@ -150,18 +151,16 @@ class CulturalAI:
                 elif kind == "need_key":
                     self.ask_for_key()
                 elif kind == "done":
-                    results, paths = event[1], event[2]
+                    results, paths, tag = event[1], event[2], event[3]
                     if all(isinstance(result, Exception) for result in results):
-                        self.log("\nNo image could be processed.")
+                        self.log(f"\n{tag} No image could be processed.")
                     else:
-                        self.log("\nDrawing complete.")
+                        self.log(f"\n{tag} Drawing complete.")
                     self.log(f"\n{format_batch_summary(results, paths)}")
-                    self.upload_btn.config(state=tk.NORMAL)
                 elif kind == "error":
-                    self.log(f"\nError: {event[1]}")
+                    tag = f"{event[2]} " if len(event) > 2 else ""  # load errors have no upload tag
+                    self.log(f"\n{tag}Error: {event[1]}")
                     messagebox.showerror("Processing Error", str(event[1]))
-                    if self.engine.loaded:
-                        self.upload_btn.config(state=tk.NORMAL)
         except queue.Empty:
             pass
 

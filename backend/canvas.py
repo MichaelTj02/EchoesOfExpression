@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 from pathlib import Path
 
@@ -42,7 +43,10 @@ def intersect_with_tolerance(box1, box2, max_overlap_ratio=MAX_OVERLAP_RATIO):
 
 
 class CollaborativeCanvas:
-    """Shared canvas that accumulates agent drawings across inputs."""
+    """Shared canvas that accumulates agent drawings across inputs.
+
+    Thread-safe: uploads can add agents while a background thread is drawing (see draw()).
+    """
 
     def __init__(self, width=CANVAS_WIDTH, height=CANVAS_HEIGHT, bg_color=BG_COLOR, frame_delay=FRAME_DELAY):
         self.bg_color = bg_color
@@ -52,70 +56,127 @@ class CollaborativeCanvas:
         self.used_regions = []  # to track agent locations
         self.input_counter = 0
 
-    def add_agent(self, image: Image.Image, emotion: str = "Unknown") -> bool:
+        # Guards image, agents and used_regions; notified after every drawing step
+        self._lock = threading.RLock()
+        self._stepped = threading.Condition(self._lock)
+        self._save_lock = threading.Lock()
+        self._listeners = []  # on_frame callbacks of draw() calls still waiting
+        self._drawer = None  # background drawing thread, alive while there are agents
+
+    def add_agent(self, image: Image.Image, emotion: str = "Unknown", max_updates: int | None = None) -> Agent | None:
+        """Place a new agent without too much overlap; returns it, or None when there is no room."""
         image = image.convert("RGBA")
         new_width = int(image.width * AGENT_RESIZE_RATIO)
         new_height = int(image.height * AGENT_RESIZE_RATIO)
         image = image.resize((new_width, new_height), Image.LANCZOS)
 
-        for _ in range(PLACEMENT_ATTEMPTS):
-            x = random.randint(0, self.image.width - new_width)
-            y = random.randint(0, self.image.height - new_height)
+        with self._lock:
+            for _ in range(PLACEMENT_ATTEMPTS):
+                x = random.randint(0, self.image.width - new_width)
+                y = random.randint(0, self.image.height - new_height)
 
-            # Check overlap with other agents
-            new_box = (x, y, x + new_width, y + new_height)
-            overlap = any(
-                intersect_with_tolerance(new_box, region, max_overlap_ratio=MAX_OVERLAP_RATIO)
-                for region in self.used_regions
-            )
+                # Check overlap with other agents
+                new_box = (x, y, x + new_width, y + new_height)
+                overlap = any(
+                    intersect_with_tolerance(new_box, region, max_overlap_ratio=MAX_OVERLAP_RATIO)
+                    for region in self.used_regions
+                )
 
-            if not overlap:
-                self.used_regions.append(new_box)
-                self.agents.append(Agent(image, x, y, emotion=emotion))
-                return True
+                if not overlap:
+                    self.used_regions.append(new_box)
+                    agent = Agent(image, x, y, emotion=emotion, max_updates=max_updates or MAX_DRAW_STEPS)
+                    self.agents.append(agent)
+                    return agent
 
         logger.warning("Could not place agent without overlap.")
-        return False
+        return None
 
-    def run(self, steps: int | None = None, on_frame=None) -> int:
-        """Let every agent paint until it has finished its drawing.
-
-        With ``steps=None`` the run lasts until all agents are done (capped at
-        ``MAX_DRAW_STEPS``); with ``steps=N`` it lasts at most N steps. Finished
-        agents are removed; unfinished ones carry over to the next run.
-        ``on_frame`` gets a flattened copy every ``FRAME_EVERY`` steps (each
-        followed by a ``frame_delay`` pause) and once more when the run ends.
-        Returns the number of steps taken.
-        """
-        self.input_counter += 1
-        limit = MAX_DRAW_STEPS if steps is None else steps
-
-        step = 0
-        while step < limit and self.agents:
+    def step(self) -> bool:
+        """Every agent paints once and finished agents are removed; returns whether any are left."""
+        with self._lock:
             for agent in self.agents:
                 agent.update(self.image)
             self.agents = [agent for agent in self.agents if not agent.done]
+            self._stepped.notify_all()
+            return bool(self.agents)
 
+    def run(self, steps: int | None = None, on_frame=None) -> int:
+        """Draw in the calling thread until every agent is done, or for at most ``steps`` steps.
+
+        Unfinished agents carry over to the next run. ``on_frame`` gets a flattened
+        copy every ``FRAME_EVERY`` steps (each followed by a ``frame_delay`` pause)
+        and once more when the run ends. Returns the number of steps taken.
+        """
+        with self._lock:
+            self.input_counter += 1
+
+        step = 0
+        while (steps is None or step < steps) and self.agents:
+            self.step()
             if on_frame and step % FRAME_EVERY == 0:
                 on_frame(self.flattened())
                 time.sleep(self.frame_delay)
             step += 1
 
-        if steps is None and self.agents:
-            logger.warning(
-                "Stopped drawing after %d steps with %d unfinished agent(s).", step, len(self.agents)
-            )
         if on_frame:
             on_frame(self.flattened())  # final frame shows the finished canvas
         return step
 
+    def draw(self, agents, on_frame=None) -> None:
+        """Block until ``agents`` have finished, while a background thread draws.
+
+        Several uploads can call this at once: they share one drawing thread, so
+        every agent on the canvas paints at the same time, and agents added while
+        others are drawing join in right away. ``on_frame`` gets frames (paced by
+        ``frame_delay``) until this call's agents are done, then one final frame.
+        """
+        agents = [agent for agent in agents if agent is not None]
+        with self._lock:
+            self.input_counter += 1
+            if on_frame:
+                self._listeners.append(on_frame)
+            if self._drawer is None and self.agents:
+                self._drawer = threading.Thread(target=self._draw_loop, name="canvas-drawer", daemon=True)
+                self._drawer.start()
+            try:
+                self._stepped.wait_for(lambda: not any(agent in self.agents for agent in agents))
+            finally:
+                if on_frame:
+                    self._listeners.remove(on_frame)
+
+        if on_frame:
+            on_frame(self.flattened())  # final frame shows this upload's finished drawing
+
+    def _draw_loop(self) -> None:
+        step = 0
+        while True:
+            with self._lock:
+                if not self.step():
+                    self._drawer = None  # set under the lock, so draw() starts a new thread if needed
+                    return
+                # The same callback can be registered by several uploads; send each frame once
+                listeners = list(dict.fromkeys(self._listeners)) if step % FRAME_EVERY == 0 else []
+
+            if listeners:
+                frame = self.flattened()
+                for on_frame in listeners:
+                    try:
+                        on_frame(frame)
+                    except Exception:
+                        logger.exception("on_frame callback failed")
+                time.sleep(self.frame_delay)  # outside the lock, so uploads can add agents meanwhile
+            step += 1
+
     def flattened(self) -> Image.Image:
         # flatten image over the background colour
-        background = Image.new("RGBA", self.image.size, self.bg_color)
-        return Image.alpha_composite(background, self.image)
+        with self._lock:
+            background = Image.new("RGBA", self.image.size, self.bg_color)
+            return Image.alpha_composite(background, self.image)
 
     def save(self, path) -> Path:
         path = Path(path)
-        self.flattened().save(path)
+        frame = self.flattened()
+        with self._save_lock:  # concurrent uploads write the same file
+            frame.save(path)
         logger.info("Canvas saved to %s", path)
         return path

@@ -4,7 +4,7 @@ import random
 from collections import deque
 from PIL import Image, ImageDraw, ImageFilter
 
-from .config import PATCHES_PER_UPDATE
+from .config import MAX_DRAW_STEPS, PATCHES_PER_UPDATE
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ SHAPE_PATTERNS = {
 
 
 class Agent:
-    def __init__(self, image, start_x, start_y, emotion="Unknown", patch_size=5):
+    def __init__(self, image, start_x, start_y, emotion="Unknown", patch_size=5, max_updates=MAX_DRAW_STEPS):
         self.patch_size = patch_size
         self.origin_x = start_x
         self.origin_y = start_y
@@ -70,6 +70,8 @@ class Agent:
         self.shape_mode = EMOTION_TO_SHAPE.get(emotion, "organic_cloud")
 
         self.draw_step = 0  # internal draw step tracker for shape dynamics
+        self.updates = 0
+        self.max_updates = max_updates  # stops the agent even if its drawing never finishes
 
     def create_soft_mask(self, size, blur_radius=5, strength=0.85):
         mask = Image.new("L", (size, size), 0)
@@ -80,12 +82,13 @@ class Agent:
 
     @property
     def done(self) -> bool:
-        """True once the queue is empty and there is nothing left to paint."""
-        return not self.queue
+        """True once there is nothing left to paint, or the agent used up its updates."""
+        return not self.queue or self.updates >= self.max_updates
 
     def update(self, canvas):
-        if not self.queue:
+        if self.done:
             return
+        self.updates += 1
 
         for _ in range(PATCHES_PER_UPDATE):  # more = faster and more drawn per step
             if not self.queue:

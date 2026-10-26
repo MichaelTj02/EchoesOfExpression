@@ -70,10 +70,10 @@ def _image_label(image, position: int) -> str:
     return Path(image).name
 
 
-def generated_image_name(position: int) -> str:
-    """File name for the position-th (1-based) image of a batch, e.g. generated_image_2.png."""
+def generated_image_name(number: int) -> str:
+    """File name for the number-th (1-based) image generated this session, e.g. generated_image_2.png."""
     base = Path(GENERATED_IMAGE_NAME)
-    return f"{base.stem}_{position}{base.suffix}"
+    return f"{base.stem}_{number}{base.suffix}"
 
 
 class EchoesEngine:
@@ -87,17 +87,20 @@ class EchoesEngine:
         self.canvas = canvas if canvas is not None else CollaborativeCanvas()
         self.rng = rng if rng is not None else random.Random()
         self._loaded = False
-        self._lock = threading.Lock()
+        self._load_lock = threading.Lock()
+        self._generate_lock = threading.Lock()  # one Stable Diffusion call at a time on the GPU
+        self._generated_count = 0
 
     @property
     def loaded(self) -> bool:
         return self._loaded
 
     def load(self, on_progress=None) -> None:
-        if self._loaded:
-            return
-        notify = on_progress or (lambda stage, msg: None)
+        with self._load_lock:  # overlapping uploads must not load the models twice
+            if not self._loaded:
+                self._load(on_progress or (lambda stage, msg: None))
 
+    def _load(self, notify) -> None:
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
         notify("load", "Connecting to the LLM server...")
@@ -140,29 +143,28 @@ class EchoesEngine:
             prefix = f"[{position}/{total} {_image_label(image, position)}] "
             return lambda stage, msg: notify(stage, prefix + msg)
 
-        # One batch at a time: canvas, agents and output files are shared
-        with self._lock:
-            if not self._loaded:
-                self.load(on_progress=on_progress)
+        # Uploads may overlap: only loading and the GPU are serialized; the canvas is thread-safe
+        self.load(on_progress=on_progress)
 
-            # The LLM stages are network-bound and the client is thread-safe, so analyze concurrently
-            with ThreadPoolExecutor(max_workers=min(LLM_WORKERS, total)) as executor:
-                futures = [
-                    executor.submit(self._analyze, image, image_notify(position, image))
-                    for position, image in enumerate(images, start=1)
-                ]
-            results: list = []
-            for position, (image, future) in enumerate(zip(images, futures), start=1):
-                try:
-                    results.append(future.result())
-                except Exception as e:  # one bad image must not stop the rest of the batch
-                    logger.warning("Analysis failed for %s: %s", _image_label(image, position), e)
-                    results.append(e)
+        # The LLM stages are network-bound and the client is thread-safe, so analyze concurrently
+        with ThreadPoolExecutor(max_workers=min(LLM_WORKERS, total)) as executor:
+            futures = [
+                executor.submit(self._analyze, image, image_notify(position, image))
+                for position, image in enumerate(images, start=1)
+            ]
+        results: list = []
+        for position, (image, future) in enumerate(zip(images, futures), start=1):
+            try:
+                results.append(future.result())
+            except Exception as e:  # one bad image must not stop the rest of the batch
+                logger.warning("Analysis failed for %s: %s", _image_label(image, position), e)
+                results.append(e)
 
-            analyzed = [i for i, r in enumerate(results) if isinstance(r, _Analysis)]
-            if not analyzed:
-                return results
+        analyzed = [i for i, r in enumerate(results) if isinstance(r, _Analysis)]
+        if not analyzed:
+            return results
 
+        with self._generate_lock:
             # Painters are picked here in input order, not in the workers, so a seeded rng is
             # deterministic. A different painter from the region each time, so repeat languages vary
             painters, prompts = [], []
@@ -178,38 +180,43 @@ class EchoesEngine:
                 notify("generate", f"Generating {len(prompts)} images with Stable Diffusion...")
             generated_images = self.image_generator.generate_batch(prompts)
 
+            # Numbered across the session, so overlapping uploads don't overwrite each other's files
             paths = []
-            for i, generated in zip(analyzed, generated_images):
-                path = self.output_dir / generated_image_name(i + 1)
+            for generated in generated_images:
+                self._generated_count += 1
+                path = self.output_dir / generated_image_name(self._generated_count)
                 generated.save(path)
                 paths.append(path)
 
-            notify("draw", "Drawing onto the canvas...")
-            for i, generated in zip(analyzed, generated_images):
-                if not self.canvas.add_agent(generated, results[i].emotion):
-                    logger.warning("Could not place agent for %s without overlap.", _image_label(images[i], i + 1))
-            # A single run for the whole batch, so all new paintings are drawn at the same time
-            self.canvas.run(steps=draw_steps, on_frame=on_frame)
-            canvas_path = self.canvas.save(self.output_dir / FINAL_CANVAS_NAME)
+        notify("draw", "Drawing onto the canvas...")
+        agents = []
+        for i, generated in zip(analyzed, generated_images):
+            agent = self.canvas.add_agent(generated, results[i].emotion, max_updates=draw_steps)
+            if agent is None:
+                logger.warning("Could not place agent for %s without overlap.", _image_label(images[i], i + 1))
+            agents.append(agent)
+        # All of this batch's paintings are drawn at the same time, alongside any earlier uploads still drawing
+        self.canvas.draw(agents, on_frame=on_frame)
+        canvas_path = self.canvas.save(self.output_dir / FINAL_CANVAS_NAME)
 
-            notify("done", "Drawing complete.")
+        notify("done", "Drawing complete.")
 
-            for i, painter, prompt, path in zip(analyzed, painters, prompts, paths):
-                analysis = results[i]
-                results[i] = PipelineResult(
-                    extracted_text=analysis.extracted_text,
-                    language=analysis.language,
-                    translated_text=analysis.translated_text,
-                    emotion=analysis.emotion,
-                    confidence=analysis.confidence,
-                    composition_style=analysis.composition_style,
-                    painter=painter["name"] if painter else None,
-                    visual_goal=analysis.visual_goal,
-                    prompt=prompt,
-                    generated_image_path=path,
-                    canvas_path=canvas_path,
-                )
-            return results
+        for i, painter, prompt, path in zip(analyzed, painters, prompts, paths):
+            analysis = results[i]
+            results[i] = PipelineResult(
+                extracted_text=analysis.extracted_text,
+                language=analysis.language,
+                translated_text=analysis.translated_text,
+                emotion=analysis.emotion,
+                confidence=analysis.confidence,
+                composition_style=analysis.composition_style,
+                painter=painter["name"] if painter else None,
+                visual_goal=analysis.visual_goal,
+                prompt=prompt,
+                generated_image_path=path,
+                canvas_path=canvas_path,
+            )
+        return results
 
     def _analyze(self, image, notify) -> _Analysis:
         """LLM stages for one image. Runs in a worker thread, so it must not touch shared state."""
