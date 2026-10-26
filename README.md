@@ -27,14 +27,15 @@ python main.py
 
 To run the pipeline without the GUI:
 ```bash
-python -m backend handwritingImages/handwriting1.png
+python -m backend handwritingImages/handwriting1.png handwritingImages/handwriting6.png
 ```
 
-### 4. Upload a Handwriting Image
-- Click the **"Upload Handwriting Image"** button in the UI.
+### 4. Upload Handwriting Images
+- Click the **"Upload Handwriting Images"** button in the UI.
 - You can:
-  - Select your own handwritten image, or  
-  - Use a sample from the `handwritingImages/` folder.
+  - Select your own handwritten images, or  
+  - Use samples from the `handwritingImages/` folder.
+- Select up to 6 images at once; they are read in parallel and all painted onto the canvas at the same time.
 
 ### 5. Wait for Processing
 - The system will interpret the text and emotion.
@@ -42,6 +43,7 @@ python -m backend handwritingImages/handwriting1.png
 
 ### 6. Watch the Canvas Render
 - Once processing is complete, the drawing begins automatically under the UI console.
+- Each painting is drawn to completion before the upload button is enabled again.
 
 ### 7. View Full Results
 - After rendering, the UI console displays all retrieved and generated data:
@@ -54,14 +56,14 @@ python -m backend handwritingImages/handwriting1.png
 
 ## ⚠️ Important Notes
 
-- **One image at a time.**  
-  The upload button is disabled while an image is being processed.
+- **One batch at a time.**  
+  The upload button is disabled while a batch of images is being processed.
 
 - **Language model**  
   By default the OCR and NLP steps use a local vision model (`qwen2.5vl:7b`) through Ollama, so no API key or credits are needed. Any OpenAI-compatible server works: set `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` in `.env` (see `.env.example`), e.g. to use OpenAI's GPT-4o.
 
 - **System requirements**  
-  Running this system locally requires Python 3.10 or later, at least 16GB of RAM, and a GPU with at least 8GB VRAM (12GB+ recommended, e.g. an NVIDIA RTX 3060 12GB or higher) to run Stable Diffusion XL alongside the local language model. The first run downloads about 7GB of SDXL weights and 6GB for the Ollama model.
+  Running this system locally requires Python 3.10 or later, at least 16GB of RAM, and a GPU with at least 8GB VRAM (12GB+ recommended, e.g. an NVIDIA RTX 3060 12GB or higher) to run Stable Diffusion (DreamShaper 8, an SD 1.5 fine-tune at 512x512, ~3.5GB VRAM) alongside the local language model. The first run downloads about 2GB of Stable Diffusion weights and 6GB for the Ollama model.
 
 - **Requirements.txt**  
   Check the requirements.txt file to install all required libraries to run the system.
