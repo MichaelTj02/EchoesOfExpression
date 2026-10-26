@@ -1,3 +1,5 @@
+import threading
+
 import pytest
 from PIL import Image
 
@@ -123,14 +125,84 @@ def test_run_without_agents_returns_immediately():
     assert canvas.input_counter == 1
 
 
-def test_run_stops_at_max_draw_steps(monkeypatch):
+def test_agents_stop_at_max_draw_steps(monkeypatch):
     monkeypatch.setattr(canvas_module, "MAX_DRAW_STEPS", 3)
     canvas = CollaborativeCanvas(width=200, height=150)
-    assert canvas.add_agent(solid((100, 100)))
+    agent = canvas.add_agent(solid((100, 100)))
 
     assert canvas.run() == 3
-    assert len(canvas.agents) == 1
-    assert not canvas.agents[0].done
+    assert agent.done and agent.queue  # stopped by the cap, not because it finished
+    assert canvas.agents == []
+
+
+def test_add_agent_max_updates_caps_that_agent():
+    canvas = CollaborativeCanvas(width=200, height=100)
+    capped = canvas.add_agent(solid((50, 50)), max_updates=2)
+    free = canvas.add_agent(solid((50, 50)))
+
+    canvas.run(steps=3)
+
+    assert capped.updates == 2 and capped not in canvas.agents
+    assert canvas.agents == [free]
+
+
+def test_draw_blocks_until_its_agents_finish():
+    canvas = CollaborativeCanvas(width=100, height=100, frame_delay=0)
+    agent = canvas.add_agent(solid((50, 50)))
+    frames = []
+
+    canvas.draw([agent], on_frame=frames.append)
+
+    assert agent.done
+    assert canvas.agents == []
+    assert canvas.input_counter == 1
+    assert frames and frames[-1].tobytes() == canvas.flattened().tobytes()
+    assert region_changed(canvas, canvas.used_regions[0])
+
+
+def test_draw_without_agents_returns_immediately():
+    canvas = CollaborativeCanvas(width=50, height=50)
+    frames = []
+
+    canvas.draw([None], on_frame=frames.append)  # add_agent returns None when there is no room
+
+    assert len(frames) == 1
+
+
+def test_concurrent_draws_share_the_canvas():
+    canvas = CollaborativeCanvas(width=300, height=100, frame_delay=0.001)
+    first = canvas.add_agent(solid((50, 50)))
+    started = threading.Event()
+    frames = []
+
+    def on_frame(frame):
+        frames.append(frame)
+        started.set()
+
+    thread = threading.Thread(target=canvas.draw, args=([first],), kwargs={"on_frame": on_frame})
+    thread.start()
+    assert started.wait(timeout=5)
+
+    # An upload that arrives mid-drawing joins in while the first one is still painting
+    second = canvas.add_agent(solid((50, 50)), emotion="Anger")
+    canvas.draw([second], on_frame=on_frame)
+    thread.join(timeout=10)
+
+    assert not thread.is_alive()
+    assert first.done and second.done
+    assert canvas.agents == []
+    assert canvas.input_counter == 2
+    assert all(region_changed(canvas, box) for box in canvas.used_regions)
+
+
+def test_drawer_restarts_after_going_idle():
+    canvas = CollaborativeCanvas(width=200, height=100)
+    canvas.draw([canvas.add_agent(solid((50, 50)))])
+    assert canvas._drawer is None
+
+    agent = canvas.add_agent(solid((50, 50)))
+    canvas.draw([agent])
+    assert agent.done and canvas.agents == []
 
 
 def test_flattened_returns_a_new_image():

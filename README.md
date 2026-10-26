@@ -43,7 +43,7 @@ python -m backend handwritingImages/handwriting1.png handwritingImages/handwriti
 
 ### 6. Watch the Canvas Render
 - Once processing is complete, the drawing begins automatically under the UI console.
-- Each painting is drawn to completion before the upload button is enabled again.
+- Each painting is drawn to completion. You can keep uploading while the canvas is drawing; new paintings join in as soon as they are generated.
 
 ### 7. View Full Results
 - After rendering, the UI console displays all retrieved and generated data:
@@ -56,8 +56,8 @@ python -m backend handwritingImages/handwriting1.png handwritingImages/handwriti
 
 ## ⚠️ Important Notes
 
-- **One batch at a time.**  
-  The upload button is disabled while a batch of images is being processed.
+- **Overlapping uploads.**  
+  The upload button stays enabled after the models load. Each upload is numbered in the console (`[Upload 2] ...`), since messages from uploads in progress interleave.
 
 - **Language model**  
   By default the OCR and NLP steps use a local vision model (`qwen2.5vl:7b`) through Ollama, so no API key or credits are needed. Any OpenAI-compatible server works: set `LLM_BASE_URL`, `LLM_MODEL` and `LLM_API_KEY` in `.env` (see `.env.example`), e.g. to use OpenAI's GPT-4o.

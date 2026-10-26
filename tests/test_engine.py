@@ -316,21 +316,54 @@ def test_process_many_generates_all_prompts_in_one_batch(tmp_path, handwriting_p
     assert [stage for stage, _ in events].count("generate") == 1
 
 
-def test_process_many_runs_canvas_once(tmp_path, handwriting_pngs, monkeypatch):
+def test_process_many_draws_batch_together(tmp_path, handwriting_pngs, monkeypatch):
     engine = make_engine(tmp_path)
-    agents_at_run = []
-    original_run = engine.canvas.run
+    drawn = []
+    original_draw = engine.canvas.draw
 
-    def counting_run(*args, **kwargs):
-        agents_at_run.append(len(engine.canvas.agents))
-        return original_run(*args, **kwargs)
+    def counting_draw(agents, *args, **kwargs):
+        drawn.append(list(agents))
+        return original_draw(agents, *args, **kwargs)
 
-    monkeypatch.setattr(engine.canvas, "run", counting_run)
+    monkeypatch.setattr(engine.canvas, "draw", counting_draw)
 
     run_many(engine, handwriting_pngs[:3])
 
-    assert agents_at_run == [3]  # one run, with every new agent already placed
+    assert len(drawn) == 1 and len(drawn[0]) == 3  # one draw, with every new agent already placed
+    assert all(agent.max_updates == 10 for agent in drawn[0])  # draw_steps caps each agent
     assert engine.canvas.input_counter == 1
+
+
+def test_upload_proceeds_while_another_is_drawing(tmp_path, handwriting_png):
+    engine = make_engine(tmp_path)
+    engine.canvas.frame_delay = 0
+    second_generated = threading.Event()
+
+    def first_on_frame(frame):
+        # Hold the first upload's drawing until the second upload has generated its image;
+        # if uploads were serialized end to end this would time out
+        assert second_generated.wait(timeout=5)
+
+    def second_on_progress(stage, message):
+        if stage == "generate":
+            second_generated.set()
+
+    first_result = []
+    first = threading.Thread(target=lambda: first_result.append(
+        engine.process(handwriting_png, on_frame=first_on_frame, draw_steps=200)
+    ))
+    first.start()
+    while not engine.canvas.agents:  # wait until the first upload is drawing
+        time.sleep(0.01)
+
+    second = engine.process(handwriting_png, on_progress=second_on_progress, draw_steps=10)
+    first.join(timeout=10)
+
+    assert second_generated.is_set()
+    assert not first.is_alive() and first_result
+    assert first_result[0].generated_image_path != second.generated_image_path
+    assert engine.canvas.input_counter == 2
+    assert len(engine.canvas.used_regions) == 2
 
 
 def test_process_many_analyzes_concurrently(tmp_path, handwriting_pngs):
@@ -380,12 +413,17 @@ def test_process_many_writes_one_generated_image_per_upload(tmp_path, handwritin
     results, _, _ = run_many(engine, paths)
 
     out = tmp_path / "out"
+    # Numbered across the session in generation order; the failed image gets no file
     assert results[0].generated_image_path == out / generated_name(1)
-    assert results[2].generated_image_path == out / generated_name(3)
+    assert results[2].generated_image_path == out / generated_name(2)
     assert (out / generated_name(1)).is_file()
-    assert not (out / generated_name(2)).exists()  # its analysis failed
-    assert (out / generated_name(3)).is_file()
+    assert (out / generated_name(2)).is_file()
+    assert not (out / generated_name(3)).exists()
     assert results[0].canvas_path == results[2].canvas_path == out / FINAL_CANVAS_NAME
+
+    # The next upload continues the numbering instead of overwriting
+    results, _, _ = run_many(engine, paths[:1])
+    assert results[0].generated_image_path == out / generated_name(3)
 
 
 def test_process_many_prefixes_per_image_progress(tmp_path, handwriting_pngs):
