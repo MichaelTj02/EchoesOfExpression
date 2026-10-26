@@ -4,6 +4,8 @@ import random
 from collections import deque
 from PIL import Image, ImageDraw, ImageFilter
 
+from .config import PATCHES_PER_UPDATE
+
 logger = logging.getLogger(__name__)
 
 # Map emotion to agent's drawing shape
@@ -46,7 +48,7 @@ SHAPE_PATTERNS = {
 
 
 class Agent:
-    def __init__(self, image, start_x, start_y, emotion="Unknown", patch_size=5, input_counter=0):
+    def __init__(self, image, start_x, start_y, emotion="Unknown", patch_size=5):
         self.patch_size = patch_size
         self.origin_x = start_x
         self.origin_y = start_y
@@ -67,9 +69,6 @@ class Agent:
         # Drawing style
         self.shape_mode = EMOTION_TO_SHAPE.get(emotion, "organic_cloud")
 
-        self.last_seen_input = input_counter
-        self.max_rounds = 4  # Track drawing rounds per agent
-
         self.draw_step = 0  # internal draw step tracker for shape dynamics
 
     def create_soft_mask(self, size, blur_radius=5, strength=0.85):
@@ -79,11 +78,16 @@ class Agent:
         mask = mask.filter(ImageFilter.GaussianBlur(blur_radius))
         return mask.point(lambda p: int(p * strength))
 
+    @property
+    def done(self) -> bool:
+        """True once the queue is empty and there is nothing left to paint."""
+        return not self.queue
+
     def update(self, canvas):
         if not self.queue:
             return
 
-        for _ in range(10):  # range to control speed of drawing, more = faster and more drawn
+        for _ in range(PATCHES_PER_UPDATE):  # more = faster and more drawn per step
             if not self.queue:
                 break
 
